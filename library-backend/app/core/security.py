@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
 
-# 改用 bcrypt_sha256，稳定且无 72 字节限制
+# 使用 bcrypt_sha256 绕过 bcrypt 的 72 字节限制和版本检测 Bug
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

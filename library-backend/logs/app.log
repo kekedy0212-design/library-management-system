@@ -206,3 +206,88 @@
 2026-04-13 15:33:39 [INFO] app.main - GET /api/v1/books/ - from 127.0.0.1
 2026-04-13 15:34:01 [INFO] app.main - PUT /api/v1/requests/4/process - from 127.0.0.1
 2026-04-13 15:34:01 [WARNING] app.api.v1.endpoints.borrow - Librarian 'librarian2' approved borrow request #4 by user 'reader3' for book ID 4
+2026-04-13 16:09:48 [INFO] app.main - GET /docs - from 127.0.0.1
+2026-04-13 16:09:48 [INFO] app.main - GET /openapi.json - from 127.0.0.1
+2026-04-13 16:10:05 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:10:05 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:10:14 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:10:14 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:10:29 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:10:29 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:10:43 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:10:43 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:13:15 [INFO] app.main - GET /docs - from 127.0.0.1
+2026-04-13 16:13:15 [INFO] app.main - GET /openapi.json - from 127.0.0.1
+2026-04-13 16:13:23 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:13:23 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:14:56 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:15:31 [WARNING] passlib.handlers.bcrypt - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "E:\python\Lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2026-04-13 16:17:04 [INFO] app.main - ✅ 已创建默认系统管理员账号: admin / admin123
+2026-04-13 16:17:12 [INFO] app.main - POST /api/v1/auth/login - from 127.0.0.1
+2026-04-13 16:17:13 [INFO] app.api.v1.endpoints.auth - User 'admin' logged in successfully
+2026-04-13 16:27:20 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:27:20 [INFO] app.api.v1.endpoints.auth - New user registered: 'librarian1' (email: librarian1@example.com)
+2026-04-13 16:27:32 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:27:32 [INFO] app.api.v1.endpoints.auth - New user registered: 'librarian2' (email: librarian2@example.com)
+2026-04-13 16:27:39 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:27:39 [INFO] app.api.v1.endpoints.auth - New user registered: 'librarian3' (email: librarian3@example.com)
+2026-04-13 16:28:02 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:28:03 [INFO] app.api.v1.endpoints.auth - New user registered: 'reader1' (email: reader1@example.com)
+2026-04-13 16:28:09 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:28:10 [INFO] app.api.v1.endpoints.auth - New user registered: 'reader2' (email: reader2@example.com)
+2026-04-13 16:28:14 [INFO] app.main - POST /api/v1/auth/register - from 127.0.0.1
+2026-04-13 16:28:15 [INFO] app.api.v1.endpoints.auth - New user registered: 'reader3' (email: reader3@example.com)
+2026-04-13 16:28:56 [INFO] app.main - PUT /api/v1/users/2 - from 127.0.0.1
+2026-04-13 16:28:56 [WARNING] app.api.v1.endpoints.users - Admin 'admin' changed user 'librarian1' role from 'reader' to 'librarian'
+2026-04-13 16:29:01 [INFO] app.main - PUT /api/v1/users/3 - from 127.0.0.1
+2026-04-13 16:29:01 [WARNING] app.api.v1.endpoints.users - Admin 'admin' changed user 'librarian2' role from 'reader' to 'librarian'
+2026-04-13 16:29:03 [INFO] app.main - PUT /api/v1/users/4 - from 127.0.0.1
+2026-04-13 16:29:03 [WARNING] app.api.v1.endpoints.users - Admin 'admin' changed user 'librarian3' role from 'reader' to 'librarian'
+2026-04-13 16:29:08 [INFO] app.main - GET /api/v1/users/ - from 127.0.0.1
+2026-04-13 16:29:53 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:29:53 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book 'Harry Potter and the Philosopher's Stone' (ISBN: 9780747532743)
+2026-04-13 16:30:10 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:30:10 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book 'To Kill a Mockingbird' (ISBN: 9780061120084)
+2026-04-13 16:30:21 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:30:21 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book '1984' (ISBN: 9780451524935)
+2026-04-13 16:30:31 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:30:31 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book 'The Great Gatsby' (ISBN: 9780743273565)
+2026-04-13 16:30:42 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:30:42 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book 'Pride and Prejudice' (ISBN: 9780141439518)
+2026-04-13 16:30:52 [INFO] app.main - POST /api/v1/books/ - from 127.0.0.1
+2026-04-13 16:30:52 [INFO] app.api.v1.endpoints.books - Librarian 'admin' added book 'The Catcher in the Rye' (ISBN: 9780316769488)
