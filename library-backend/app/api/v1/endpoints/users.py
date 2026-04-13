@@ -2,7 +2,7 @@ from typing import List, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.user import UserPublic, UserUpdate
+from app.schemas.user import UserPublic, UserUpdate, UserPasswordReset
 from app.crud import crud_user
 from app.api.deps import get_current_librarian, get_current_admin
 from app.models.user import User
@@ -53,7 +53,7 @@ def update_user(
 @router.post("/{user_id}/reset-password")
 def reset_password(
     user_id: int,
-    new_password: str,
+    password_in: UserPasswordReset,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_librarian)
 ):
@@ -61,7 +61,7 @@ def reset_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     from app.core.security import get_password_hash
-    user.hashed_password = get_password_hash(new_password)
+    user.hashed_password = get_password_hash(password_in.new_password)
     db.commit()
     logger.warning(f"Librarian/Admin '{current_user.username}' reset password for user '{user.username}'")
     return {"msg": "Password reset successfully"}

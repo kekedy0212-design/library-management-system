@@ -21,6 +21,9 @@ class UserInDB(UserBase):
     updated_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
+class UserPasswordReset(BaseModel):
+    new_password: str
+
 class UserPublic(UserBase):
     id: int
     role: UserRole
