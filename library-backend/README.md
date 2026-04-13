@@ -36,7 +36,7 @@
 
 ## 快速开始
 
-### 1. 克隆项目（如果已存在则跳过）
+### 1. 克隆项目并进入目录
 
 ```bash
 git clone <your-repo-url>
@@ -49,12 +49,6 @@ cd library-backend   # 或你的项目目录名
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-```
-
-**macOS / Linux:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
 ```
 
 ### 3. 安装依赖
@@ -89,7 +83,7 @@ uvicorn app.main:app --reload --port 8000
 INFO:     Application startup complete.
 ```
 
-服务将运行在 `http://127.0.0.1:8000`。
+服务将运行在 `http://127.0.0.1:8000/docs`。
 
 ps.如果提示说.env文件存在问题可以跳过 .env 文件，直接通过系统环境变量或代码默认值来启动服务。
 
