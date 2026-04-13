@@ -8,6 +8,7 @@ class BookBase(BaseModel):
     isbn: str
     description: Optional[str] = None
     total_copies: int = 1
+    location: Optional[str] = None
 
 class BookCreate(BookBase):
     available_copies: Optional[int] = None
@@ -19,6 +20,7 @@ class BookUpdate(BaseModel):
     description: Optional[str] = None
     total_copies: Optional[int] = None
     available_copies: Optional[int] = None
+    location: Optional[str] = None
 
 class BookInDB(BookBase):
     id: int
