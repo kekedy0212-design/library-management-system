@@ -1,8 +1,3 @@
-好的，我为你准备了一份专业且易读的 `README.md`，涵盖了项目简介、技术栈、安装步骤、测试账号、接口文档、项目结构以及常见问题。你可以直接复制到项目根目录下的 `README.md` 文件中。
-
----
-
-```markdown
 # Library Management System - Backend
 
 > 图书馆管理系统后端 API（R1 阶段）  
