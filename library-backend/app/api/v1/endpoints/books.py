@@ -51,7 +51,12 @@ def update_book(
     book = crud_book.get_book(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    book = crud_book.update_book(db, book, book_in)
+    
+    try:
+        book = crud_book.update_book(db, book, book_in)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     logger.info(f"Librarian '{current_user.username}' updated book '{book.title}'")
     return book
 
