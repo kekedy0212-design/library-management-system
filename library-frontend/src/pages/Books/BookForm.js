@@ -169,7 +169,7 @@ const BookForm = () => {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div style={inputWrapperStyle}>
               <label style={labelStyle} htmlFor="total_copies">Total Copies</label>
               <input
@@ -181,17 +181,7 @@ const BookForm = () => {
                 required
               />
             </div>
-            <div style={inputWrapperStyle}>
-              <label style={labelStyle} htmlFor="available_copies">Available</label>
-              <input
-                style={inputStyle}
-                id="available_copies" name="available_copies"
-                type="number" min="0" max={formData.total_copies}
-                value={formData.available_copies}
-                onChange={handleChange}
-                required
-              />
-            </div>
+            
             <div style={inputWrapperStyle}>
               <label style={labelStyle} htmlFor="location">Shelf Location</label>
               <input

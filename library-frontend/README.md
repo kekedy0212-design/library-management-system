@@ -40,10 +40,6 @@ REACT_APP_API_BASE_URL=http://localhost:8000/api/v1
    npm start
    ```
 
-3. 构建生产版本：
-   ```bash
-   npm run build
-   ```
 
 ## 项目结构
 
