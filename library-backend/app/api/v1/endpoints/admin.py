@@ -23,14 +23,15 @@ def read_logs(
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             all_lines = f.readlines()
             recent = all_lines[-lines:] if len(all_lines) > lines else all_lines
-        
+
         logger.info(f"✅ [日志查看成功] 管理员 '{current_user.username}' 成功获取日志 | 请求行数: {lines} | 实际返回: {len(recent)} | 日志文件总行数: {len(all_lines)}")
-        
+
+        # 返回带换行符的字符串，前端直接渲染
         return {
             "log_file": str(LOG_FILE),
             "total_lines": len(all_lines),
             "returned_lines": len(recent),
-            "logs": [line.strip() for line in recent]
+            "logs": ''.join(recent)
         }
     except Exception as e:
         logger.error(f"❌ [日志查看失败] 读取日志文件时出错 | 管理员: {current_user.username} | 错误: {str(e)}")
