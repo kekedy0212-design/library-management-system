@@ -8,9 +8,11 @@ const decodeToken = (token) => {
     return {
       username: payload.sub,
       role: payload.role,
+      email: payload.email || null,
+      is_active: payload.is_active ?? true,
     };
   } catch {
-    return { username: null, role: 'reader' };
+    return { username: null, role: 'reader', email: null, is_active: true };
   }
 };
 
@@ -28,8 +30,8 @@ export const useAuth = () => {
         user: {
           username: payload.username || credentials.username,
           role: payload.role,
-          email: '',
-          is_active: true,
+          email: payload.email || null,
+          is_active: payload.is_active ?? true,
         },
         token: access_token,
       }));

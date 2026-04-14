@@ -4,7 +4,10 @@ import {
   fetchBooksStart,
   fetchBooksSuccess,
   fetchBooksFailure,
-  setCurrentBook
+  setCurrentBook,
+  addBook,
+  updateBook as updateBookAction,
+  deleteBook as deleteBookAction,
 } from '../store/slices/bookSlice';
 import { bookService } from '../services/bookService';
 
@@ -32,6 +35,36 @@ export const useBooks = () => {
     }
   }, [dispatch]);
 
+  const createBook = useCallback(async (bookData) => {
+    try {
+      const response = await bookService.createBook(bookData);
+      dispatch(addBook(response.data));
+      return response.data;
+    } catch (err) {
+      throw err;
+    }
+  }, [dispatch]);
+
+  const updateBook = useCallback(async (id, bookData) => {
+    try {
+      const response = await bookService.updateBook(id, bookData);
+      dispatch(updateBookAction(response.data));
+      return response.data;
+    } catch (err) {
+      throw err;
+    }
+  }, [dispatch]);
+
+  const deleteBook = useCallback(async (id) => {
+    try {
+      const response = await bookService.deleteBook(id);
+      dispatch(deleteBookAction(id));
+      return response.data;
+    } catch (err) {
+      throw err;
+    }
+  }, [dispatch]);
+
   return {
     books,
     currentBook,
@@ -40,5 +73,8 @@ export const useBooks = () => {
     searchQuery,
     fetchBooks,
     fetchBookById,
+    createBook,
+    updateBook,
+    deleteBook,
   };
 };

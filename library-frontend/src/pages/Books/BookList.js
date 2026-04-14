@@ -6,7 +6,7 @@ import { ROLES } from '../../utils/constants';
 
 const BookList = () => {
   const navigate = useNavigate();
-  const { books, loading, error, fetchBooks } = useBooks();
+  const { books, loading, error, fetchBooks, deleteBook } = useBooks();
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -20,6 +20,27 @@ const BookList = () => {
 
   const handleViewDetail = (bookId) => {
     navigate(`/books/${bookId}`);
+  };
+
+  const handleCreate = () => {
+    navigate('/books/new');
+  };
+
+  const handleEdit = (bookId) => {
+    navigate(`/books/${bookId}/edit`);
+  };
+
+  const handleDelete = async (bookId) => {
+    if (!window.confirm('确定要删除这本书吗？此操作不可恢复。')) {
+      return;
+    }
+
+    try {
+      await deleteBook(bookId);
+      alert('书籍已删除');
+    } catch (err) {
+      alert(`删除失败: ${err.response?.data?.detail || err.message}`);
+    }
   };
 
   if (loading) return <div className="loading">加载中...</div>;
@@ -47,7 +68,7 @@ const BookList = () => {
 
       {hasPermission(ROLES.LIBRARIAN) && (
         <div className="card">
-          <button className="btn" onClick={() => alert('添加新书功能待实现')}>添加新书</button>
+          <button className="btn" onClick={handleCreate}>添加新书</button>
         </div>
       )}
 
@@ -88,8 +109,8 @@ const BookList = () => {
                   </button>
                   {hasPermission(ROLES.LIBRARIAN) && (
                     <>
-                      <button className="btn" onClick={() => alert('编辑功能待实现')}>编辑</button>
-                      <button className="btn btn-danger" onClick={() => alert('删除功能待实现')}>删除</button>
+                      <button className="btn" onClick={() => handleEdit(book.id)}>编辑</button>
+                      <button className="btn btn-danger" onClick={() => handleDelete(book.id)}>删除</button>
                     </>
                   )}
                 </td>
