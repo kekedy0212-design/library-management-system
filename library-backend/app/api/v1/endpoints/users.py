@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.user import UserPublic, UserUpdate, UserPasswordReset
 from app.crud import crud_user
-from app.api.deps import get_current_librarian, get_current_admin
+from app.api.deps import get_current_librarian, get_current_admin, check_permission_hierarchy
 from app.models.user import User
 import logging
 
@@ -26,7 +26,7 @@ def update_user(
     user_id: int,
     user_in: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)  # 只有 admin 可修改角色
+    current_user: User = Depends(get_current_librarian)  # 允许 librarian 和 admin
 ):
     user = crud_user.get_user(db, user_id)
     if not user:
@@ -35,6 +35,10 @@ def update_user(
     # 禁止修改自己的角色
     if user.id == current_user.id and user_in.role is not None:
         raise HTTPException(status_code=400, detail="Cannot change your own role")
+
+    # 检查权限：如果要修改 is_active 或 role，需要权限检查
+    if user_in.is_active is not None or user_in.role is not None:
+        check_permission_hierarchy(current_user, user)
 
     old_role = user.role.value
     old_active = user.is_active
@@ -60,6 +64,10 @@ def reset_password(
     user = crud_user.get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # 检查权限：不能修改权限高于自己的用户的密码
+    check_permission_hierarchy(current_user, user)
+    
     from app.core.security import get_password_hash
     user.hashed_password = get_password_hash(password_in.new_password)
     db.commit()

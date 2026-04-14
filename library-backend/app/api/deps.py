@@ -11,6 +11,39 @@ from app.crud.crud_user import get_user
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+# 权限等级映射（数字越大权限越高）
+ROLE_LEVEL = {
+    UserRole.READER: 1,
+    UserRole.LIBRARIAN: 2,
+    UserRole.ADMIN: 3,
+}
+
+def get_role_level(role: UserRole) -> int:
+    """获取角色的权限等级"""
+    return ROLE_LEVEL.get(role, 0)
+
+def check_permission_hierarchy(operator: User, target_user: User) -> None:
+    """
+    检查操作者是否有权修改目标用户。
+    规则：只能修改权限 <= 自己的用户
+    
+    Args:
+        operator: 执行操作的用户
+        target_user: 被修改的用户
+        
+    Raises:
+        HTTPException: 当权限不足时抛出
+    """
+    operator_level = get_role_level(operator.role)
+    target_level = get_role_level(target_user.role)
+    
+    # 不能修改权限高于自己的用户
+    if target_level > operator_level:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot modify user with higher privilege. You are '{operator.role.value}', target user is '{target_user.role.value}'"
+        )
+
 def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db)
