@@ -12,14 +12,21 @@ import BorrowHistory from './pages/Borrow/BorrowHistory';
 import Logs from './pages/Admin/Logs';
 import NotFound from './pages/NotFound';
 import './styles/App.css';
+import './styles/css/light.css';
 
 function App() {
+  const [isSidebarOpen, setSidebarOpen] = React.useState(true);
   return (
-    <div className="app">
-      <Header />
-      <div className="app-body">
-        <Sidebar />
-        <main className="main-content">
+    <div className="light" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Header onMenuClick={() => setSidebarOpen(!isSidebarOpen)} />
+      <div className="app-body" style={{ display: 'flex', flex: 1 }}>
+        <Sidebar isOpen={isSidebarOpen} />
+        <main className="main-content" style={{
+          flex: 1,
+          padding: '24px',
+          backgroundColor: 'var(--md-sys-color-surface)',
+          minWidth: 0 // 防止内容溢出
+        }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/login" element={<Login />} />

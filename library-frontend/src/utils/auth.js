@@ -7,7 +7,7 @@ export const isAuthenticated = () => {
 export const getUserRole = () => {
   const token = localStorage.getItem('token');
   if (!token) return null;
-  
+
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload.role;
@@ -19,13 +19,13 @@ export const getUserRole = () => {
 export const hasPermission = (requiredRole) => {
   const userRole = getUserRole();
   if (!userRole) return false;
-  
+
   const roleHierarchy = {
     [ROLES.READER]: 1,
     [ROLES.LIBRARIAN]: 2,
     [ROLES.ADMIN]: 3,
   };
-  
+
   return roleHierarchy[userRole] >= roleHierarchy[requiredRole];
 };
 
