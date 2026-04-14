@@ -1,7 +1,9 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
@@ -18,6 +20,8 @@ import './styles/css/light.css';
 
 function App() {
   const [isSidebarOpen, setSidebarOpen] = React.useState(true);
+  const { isAuthenticated } = useSelector(state => state.auth);
+
   return (
     <div className="light" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header onMenuClick={() => setSidebarOpen(!isSidebarOpen)} />
@@ -30,17 +34,17 @@ function App() {
           minWidth: 0 // 防止内容溢出
         }}>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/books" element={<BookList />} />
-            <Route path="/books/new" element={<BookForm />} />
-            <Route path="/books/:id/edit" element={<BookForm />} />
-            <Route path="/books/:id" element={<BookDetail />} />
-            <Route path="/users" element={<UserList />} />
-            <Route path="/borrow" element={<BorrowHistory />} />
-            <Route path="/admin/logs" element={<Logs />} />
-            <Route path="/admin/requests" element={<RequestApproval />} />
+            <Route path="/books" element={<ProtectedRoute><BookList /></ProtectedRoute>} />
+            <Route path="/books/new" element={<ProtectedRoute requiredRole="librarian"><BookForm /></ProtectedRoute>} />
+            <Route path="/books/:id/edit" element={<ProtectedRoute requiredRole="librarian"><BookForm /></ProtectedRoute>} />
+            <Route path="/books/:id" element={<ProtectedRoute><BookDetail /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute requiredRole="librarian"><UserList /></ProtectedRoute>} />
+            <Route path="/borrow" element={<ProtectedRoute><BorrowHistory /></ProtectedRoute>} />
+            <Route path="/admin/logs" element={<ProtectedRoute requiredRole="admin"><Logs /></ProtectedRoute>} />
+            <Route path="/admin/requests" element={<ProtectedRoute requiredRole="librarian"><RequestApproval /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

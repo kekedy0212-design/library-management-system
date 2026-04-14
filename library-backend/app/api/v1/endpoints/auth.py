@@ -44,7 +44,12 @@ def login(
         raise HTTPException(status_code=400, detail="Inactive user")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "role": user.role.value},
+        data={
+            "sub": user.username,
+            "role": user.role.value,
+            "email": user.email,
+            "is_active": user.is_active,
+        },
         expires_delta=access_token_expires
     )
     logger.info(f"User '{user.username}' logged in successfully")

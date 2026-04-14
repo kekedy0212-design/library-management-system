@@ -1,11 +1,11 @@
 import { ROLES } from './constants';
 
 export const isAuthenticated = () => {
-  return !!localStorage.getItem('token');
+  return !!sessionStorage.getItem('token');
 };
 
 export const getUserRole = () => {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
   if (!token) return null;
 
   try {

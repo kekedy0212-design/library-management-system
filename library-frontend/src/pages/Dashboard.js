@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
-import { isAuthenticated } from '../utils/auth';
+import { isAuthenticated, getUserRole } from '../utils/auth';
 import MdCard from '../components/MdCard';
 
 import '@material/web/button/filled-button.js';
@@ -34,6 +34,8 @@ const Dashboard = () => {
     );
   }
 
+  const role = user?.role || getUserRole();
+
   return (
     <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <h2 style={{ font: 'var(--md-sys-typescale-headline-medium-font)', margin: '0' }}>
@@ -47,17 +49,17 @@ const Dashboard = () => {
         <md-list style={{ background: 'transparent', padding: 0 }}>
           <md-list-item>
             <div slot="headline">Username</div>
-            <div slot="supporting-text">{user?.username}</div>
+            <div slot="supporting-text">{user?.username || 'Unknown'}</div>
           </md-list-item>
           <md-divider></md-divider>
           <md-list-item>
             <div slot="headline">Email</div>
-            <div slot="supporting-text">{user?.email}</div>
+            <div slot="supporting-text">{user?.email || 'N/A'}</div>
           </md-list-item>
           <md-divider></md-divider>
           <md-list-item>
             <div slot="headline">Role</div>
-            <div slot="supporting-text" style={{ textTransform: 'capitalize' }}>{user?.role}</div>
+            <div slot="supporting-text" style={{ textTransform: 'capitalize' }}>{role}</div>
           </md-list-item>
           <md-divider></md-divider>
           <md-list-item>
@@ -84,7 +86,7 @@ const Dashboard = () => {
             History
           </md-outlined-button>
 
-          {(user?.role === 'librarian' || user?.role === 'admin') && (
+          {(role === 'librarian' || role === 'admin') && (
             <>
               <md-outlined-button href="/users">
                 <md-icon slot="icon">group</md-icon>
@@ -97,7 +99,7 @@ const Dashboard = () => {
             </>
           )}
 
-          {user?.role === 'admin' && (
+          {role === 'admin' && (
             <md-text-button href="/admin/logs">
               <md-icon slot="icon">settings_ethernet</md-icon>
               System Logs

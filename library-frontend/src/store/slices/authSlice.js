@@ -1,9 +1,26 @@
 import { createSlice } from '@reduxjs/toolkit';
 
+const decodeToken = (token) => {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return {
+      username: payload.sub || null,
+      role: payload.role || 'reader',
+      email: payload.email || null,
+      is_active: payload.is_active ?? true,
+    };
+  } catch {
+    sessionStorage.removeItem('token');
+    return null;
+  }
+};
+
+const initialToken = sessionStorage.getItem('token') || null;
 const initialState = {
-  user: null,
-  token: localStorage.getItem('token') || null,
-  isAuthenticated: !!localStorage.getItem('token'),
+  user: decodeToken(initialToken),
+  token: initialToken,
+  isAuthenticated: !!initialToken,
   loading: false,
   error: null,
 };
@@ -21,7 +38,7 @@ const authSlice = createSlice({
       state.user = action.payload.user;
       state.token = action.payload.token;
       state.isAuthenticated = true;
-      localStorage.setItem('token', action.payload.token);
+      sessionStorage.setItem('token', action.payload.token);
     },
     loginFailure: (state, action) => {
       state.loading = false;
@@ -31,7 +48,7 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       state.isAuthenticated = false;
-      localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
     },
     registerStart: (state) => {
       state.loading = true;
