@@ -7,9 +7,11 @@ import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import BookList from './pages/Books/BookList';
 import BookDetail from './pages/Books/BookDetail';
+import BookForm from './pages/Books/BookForm';
 import UserList from './pages/Users/UserList';
 import BorrowHistory from './pages/Borrow/BorrowHistory';
 import Logs from './pages/Admin/Logs';
+import RequestApproval from './pages/Admin/RequestApproval';
 import NotFound from './pages/NotFound';
 import './styles/App.css';
 import './styles/css/light.css';
@@ -32,10 +34,13 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/books" element={<BookList />} />
+            <Route path="/books/new" element={<BookForm />} />
+            <Route path="/books/:id/edit" element={<BookForm />} />
             <Route path="/books/:id" element={<BookDetail />} />
             <Route path="/users" element={<UserList />} />
             <Route path="/borrow" element={<BorrowHistory />} />
             <Route path="/admin/logs" element={<Logs />} />
+            <Route path="/admin/requests" element={<RequestApproval />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

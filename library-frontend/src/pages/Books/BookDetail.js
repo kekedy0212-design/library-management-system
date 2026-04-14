@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useBooks } from '../../hooks/useBooks';
+import { useBorrow } from '../../hooks/useBorrow';
 import { formatDate } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
@@ -8,8 +9,10 @@ import { ROLES } from '../../utils/constants';
 const BookDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentBook, loading, error, fetchBookById } = useBooks();
+  const { currentBook, loading, error, fetchBookById, deleteBook } = useBooks();
+  const { borrowBook } = useBorrow();
   const [borrowLoading, setBorrowLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -18,21 +21,36 @@ const BookDetail = () => {
   }, [id, fetchBookById]);
 
   const handleBorrow = async () => {
-    // TODO: 实现借书功能
     setBorrowLoading(true);
     try {
-      // const result = await borrowBook(currentBook.id);
-      // if (result.success) {
-      //   alert('借书成功');
-      //   navigate('/borrow');
-      // } else {
-      //   alert(`借书失败: ${result.error}`);
-      // }
-      alert('借书功能待实现');
+      await borrowBook(currentBook.id);
+      alert('借书请求已提交，请等待管理员审批');
+      navigate('/borrow');
     } catch (err) {
-      alert(`借书失败: ${err.message}`);
+      alert(`借书失败: ${err.response?.data?.detail || err.message}`);
     } finally {
       setBorrowLoading(false);
+    }
+  };
+
+  const handleEdit = () => {
+    navigate(`/books/${id}/edit`);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('确定要删除这本书吗？此操作不可恢复。')) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      await deleteBook(currentBook.id);
+      alert('书籍已删除');
+      navigate('/books');
+    } catch (err) {
+      alert(`删除失败: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -154,11 +172,11 @@ const BookDetail = () => {
 
           {hasPermission(ROLES.LIBRARIAN) && (
             <>
-              <button className="btn btn-warning" onClick={() => alert('编辑功能待实现')}>
+              <button className="btn btn-warning" onClick={handleEdit}>
                 编辑书籍
               </button>
-              <button className="btn btn-danger" onClick={() => alert('删除功能待实现')}>
-                删除书籍
+              <button className="btn btn-danger" onClick={handleDelete} disabled={deleteLoading}>
+                {deleteLoading ? '删除中...' : '删除书籍'}
               </button>
             </>
           )}

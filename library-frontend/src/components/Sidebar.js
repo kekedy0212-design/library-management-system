@@ -31,6 +31,7 @@ const Sidebar = ({ isOpen }) => {
     { label: 'Books Management', path: '/books', icon: 'library_books', visible: true },
     { label: 'User Management', path: '/users', icon: 'group', visible: isLibrarian() || isAdmin() },
     { label: 'Borrowing Requests', path: '/borrow', icon: 'book_loader', visible: isLibrarian() || isAdmin() },
+    { label: 'Request Approval', path: '/admin/requests', icon: 'check_circle', visible: isLibrarian() || isAdmin() },
     { label: 'System Logs', path: '/admin/logs', icon: 'settings_ethernet', visible: isAdmin() },
   ];
 
