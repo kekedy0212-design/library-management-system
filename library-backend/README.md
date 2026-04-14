@@ -39,7 +39,7 @@
 ### 1. 克隆项目并进入目录
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/kekedy0212-design/library-management-system.git
 cd library-backend   # 或你的项目目录名
 ```
 

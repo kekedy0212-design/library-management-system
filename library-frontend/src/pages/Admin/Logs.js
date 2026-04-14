@@ -4,7 +4,7 @@ import { isAdmin } from '../../utils/auth';
 import MdCard from '../../components/MdCard';
 
 const Logs = () => {
-  const [logs, setLogs] = useState('');
+  const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lines, setLines] = useState(100);
@@ -14,7 +14,7 @@ const Logs = () => {
     setError(null);
     try {
       const response = await adminService.getLogs(lines);
-      setLogs(response.data.logs);
+      setLogs(Array.isArray(response.data.logs) ? response.data.logs : [String(response.data.logs)]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -92,13 +92,28 @@ const Logs = () => {
           <span style={{ fontSize: '0.75rem', color: '#938F99', fontFamily: 'monospace' }}>server.log</span>
         </div>
 
-        <pre style={logPreStyle}>
+        <div style={logContainerStyle}>
           {loading ? (
-            <span style={{ color: '#938F99' }}>Synchronizing with server...</span>
+            <div style={logLineStyle}>
+              <span style={{ color: '#938F99' }}>Synchronizing with server...</span>
+            </div>
+          ) : logs.length > 0 ? (
+            logs.map((line, index) => (
+              <div key={index} style={logLineStyle}>
+                <span style={{ color: line.includes('ERROR') || line.includes('CRITICAL') ? '#FFB4AB' :
+                              line.includes('WARNING') ? '#FFAB40' :
+                              line.includes('INFO') ? '#A5D6A7' :
+                              line.includes('DEBUG') ? '#90CAF9' : '#E6E1E5' }}>
+                  {line || '\u00A0'}
+                </span>
+              </div>
+            ))
           ) : (
-            logs || 'No log entries found for this period.'
+            <div style={logLineStyle}>
+              <span style={{ color: '#938F99' }}>No log entries found for this period.</span>
+            </div>
           )}
-        </pre>
+        </div>
       </MdCard>
 
       <footer style={{ marginTop: '16px', fontSize: '0.8rem', color: 'var(--md-sys-color-outline)' }}>
@@ -149,18 +164,22 @@ const dotStyle = {
   borderRadius: '50%'
 };
 
-const logPreStyle = {
-  margin: 0,
+const logContainerStyle = {
   padding: '20px',
-  color: '#E6E1E5',
   backgroundColor: '#1C1B1F',
   fontSize: '0.85rem',
   fontFamily: '"Roboto Mono", "Fira Code", monospace',
-  lineHeight: '1.5',
   overflow: 'auto',
   maxHeight: '650px',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all'
+  borderRadius: '0 0 12px 12px'
+};
+
+const logLineStyle = {
+  lineHeight: '1.6',
+  padding: '2px 0',
+  borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+  wordBreak: 'break-all',
+  whiteSpace: 'pre-wrap'
 };
 
 const errorBannerStyle = {
