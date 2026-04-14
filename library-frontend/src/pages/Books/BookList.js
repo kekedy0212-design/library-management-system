@@ -1,20 +1,25 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useBooks } from '../../hooks/useBooks';
-import { formatDate } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 
 const BookList = () => {
+  const navigate = useNavigate();
   const { books, loading, error, fetchBooks } = useBooks();
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetchBooks(searchQuery);
-  }, [fetchBooks, searchQuery]);
+    fetchBooks();
+  }, [fetchBooks]);
 
   const handleSearch = (e) => {
     e.preventDefault();
     fetchBooks(searchQuery);
+  };
+
+  const handleViewDetail = (bookId) => {
+    navigate(`/books/${bookId}`);
   };
 
   if (loading) return <div className="loading">加载中...</div>;
@@ -22,8 +27,8 @@ const BookList = () => {
 
   return (
     <div>
-      <h2>书籍管理</h2>
-      
+      <h2>书籍搜索</h2>
+
       <div className="card">
         <form onSubmit={handleSearch}>
           <div className="form-group">
@@ -42,11 +47,12 @@ const BookList = () => {
 
       {hasPermission(ROLES.LIBRARIAN) && (
         <div className="card">
-          <button className="btn">添加新书</button>
+          <button className="btn" onClick={() => alert('添加新书功能待实现')}>添加新书</button>
         </div>
       )}
 
       <div className="card">
+        <h3>搜索结果 ({books.length} 本书籍)</h3>
         <table className="table">
           <thead>
             <tr>
@@ -56,7 +62,7 @@ const BookList = () => {
               <th>总藏书</th>
               <th>可借数量</th>
               <th>位置</th>
-              <th>创建时间</th>
+              <th>状态</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -69,13 +75,21 @@ const BookList = () => {
                 <td>{book.total_copies}</td>
                 <td>{book.available_copies}</td>
                 <td>{book.location || '未设置'}</td>
-                <td>{formatDate(book.created_at)}</td>
                 <td>
-                  <button className="btn">查看</button>
+                  {book.available_copies > 0 ? (
+                    <span style={{ color: 'green' }}>可借阅</span>
+                  ) : (
+                    <span style={{ color: 'red' }}>暂无库存</span>
+                  )}
+                </td>
+                <td>
+                  <button className="btn" onClick={() => handleViewDetail(book.id)}>
+                    查看详情
+                  </button>
                   {hasPermission(ROLES.LIBRARIAN) && (
                     <>
-                      <button className="btn">编辑</button>
-                      <button className="btn btn-danger">删除</button>
+                      <button className="btn" onClick={() => alert('编辑功能待实现')}>编辑</button>
+                      <button className="btn btn-danger" onClick={() => alert('删除功能待实现')}>删除</button>
                     </>
                   )}
                 </td>
@@ -83,6 +97,12 @@ const BookList = () => {
             ))}
           </tbody>
         </table>
+
+        {books.length === 0 && !loading && (
+          <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+            {searchQuery ? '未找到匹配的书籍' : '暂无书籍数据'}
+          </div>
+        )}
       </div>
     </div>
   );

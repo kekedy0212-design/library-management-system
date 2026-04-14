@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Login from './pages/Auth/Login';
 import Register from './pages/Auth/Register';
 import BookList from './pages/Books/BookList';
+import BookDetail from './pages/Books/BookDetail';
 import UserList from './pages/Users/UserList';
 import BorrowHistory from './pages/Borrow/BorrowHistory';
 import Logs from './pages/Admin/Logs';
@@ -24,6 +25,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/books" element={<BookList />} />
+            <Route path="/books/:id" element={<BookDetail />} />
             <Route path="/users" element={<UserList />} />
             <Route path="/borrow" element={<BorrowHistory />} />
             <Route path="/admin/logs" element={<Logs />} />
