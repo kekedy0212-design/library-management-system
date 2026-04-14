@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pathlib import Path
 from app.api.deps import get_current_admin
 from app.models.user import User
+from app.core.logger import LOG_FILE
 
 router = APIRouter()
-
-LOG_FILE = Path(__file__).resolve().parent.parent.parent.parent / "logs" / "app.log"
 
 @router.get("/logs")
 def read_logs(

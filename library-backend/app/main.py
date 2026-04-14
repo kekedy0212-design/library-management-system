@@ -1,18 +1,21 @@
 ﻿from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import engine, Base, SessionLocal
-from app.core.logger import setup_logging
+from app.core.logger import setup_logging, get_logger
 from app.core.security import get_password_hash  # 添加这行导入
 import logging
+import os
 
 # 导入所有模型（必须！否则表不会创建）
 from app.models.user import User, UserRole
 from app.models.book import Book
 from app.models.borrow import BorrowRecord
 
-# 初始化日志
-setup_logging()
-logger = logging.getLogger(__name__)
+# 初始化日志 - 支持通过环境变量调整日志级别 (DEBUG, INFO, WARNING, ERROR)
+log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_str, logging.INFO)
+setup_logging(log_level=log_level)
+logger = get_logger(__name__)
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
