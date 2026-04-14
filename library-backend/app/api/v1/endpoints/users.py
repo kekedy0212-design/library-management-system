@@ -18,7 +18,10 @@ def read_users(
     limit: int = 100,
     current_user: User = Depends(get_current_librarian)
 ):
+    """获取用户列表"""
+    logger.debug(f"👥 [用户列表] 用户 '{current_user.username}' 查询用户列表 | 分页: skip={skip}, limit={limit}")
     users = crud_user.get_users(db, skip=skip, limit=limit)
+    logger.debug(f"✅ [用户列表] 返回 {len(users)} 个用户")
     return users
 
 @router.put("/{user_id}", response_model=UserPublic)
@@ -28,12 +31,17 @@ def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_librarian)  # 允许 librarian 和 admin
 ):
+    """更新用户信息"""
+    logger.info(f"✏️ [用户更新] 操作人 '{current_user.username}' (角色: {current_user.role.value}) 开始更新用户 | 用户 ID: {user_id}")
+    
     user = crud_user.get_user(db, user_id)
     if not user:
+        logger.warning(f"⚠️ [用户更新失败] 用户未找到 | ID: {user_id}")
         raise HTTPException(status_code=404, detail="User not found")
 
     # 禁止修改自己的角色
     if user.id == current_user.id and user_in.role is not None:
+        logger.warning(f"❌ [用户更新失败] 用户 '{current_user.username}' 尝试修改自己的角色")
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
     # 检查权限：如果要修改 is_active 或 role，需要权限检查
@@ -42,15 +50,30 @@ def update_user(
 
     old_role = user.role.value
     old_active = user.is_active
+    old_email = user.email
 
     user = crud_user.update_user(db, user, user_in)
 
     # 记录关键变更
+    changes = []
     if user_in.role is not None and old_role != user.role.value:
-        logger.warning(f"Admin '{current_user.username}' changed user '{user.username}' role from '{old_role}' to '{user.role.value}'")
+        changes.append(f"角色: {old_role} → {user.role.value}")
+        logger.info(f"⚠️ [角色变更] 用户 '{current_user.username}' 将用户 '{user.username}' 的角色从 '{old_role}' 修改为 '{user.role.value}'")
+    
     if user_in.is_active is not None and old_active != user.is_active:
-        action = "disabled" if not user.is_active else "enabled"
-        logger.warning(f"Admin '{current_user.username}' {action} user '{user.username}'")
+        action = "禁用" if not user.is_active else "启用"
+        status_text = "已禁用" if not user.is_active else "已启用"
+        changes.append(f"状态: {status_text}")
+        logger.info(f"⚠️ [用户状态变更] 用户 '{current_user.username}' {action}了用户 '{user.username}' | 新状态: {status_text}")
+    
+    if user_in.email is not None and old_email != user.email:
+        changes.append(f"邮箱: {old_email} → {user.email}")
+        logger.debug(f"📧 [邮箱变更] 用户 '{user.username}' 的邮箱已更改")
+    
+    if changes:
+        logger.info(f"✅ [用户更新成功] 用户 '{user.username}' (ID: {user.id}) 的信息已更新 | 修改项: {', '.join(changes)}")
+    else:
+        logger.debug(f"ℹ️ [用户更新] 用户 '{user.username}' 无实质性变更")
 
     return user
 
@@ -61,8 +84,12 @@ def reset_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_librarian)
 ):
+    """重置用户密码"""
+    logger.info(f"🔑 [密码重置] 用户 '{current_user.username}' 开始重置密码 | 目标用户 ID: {user_id}")
+    
     user = crud_user.get_user(db, user_id)
     if not user:
+        logger.warning(f"⚠️ [密码重置失败] 用户未找到 | ID: {user_id}")
         raise HTTPException(status_code=404, detail="User not found")
     
     # 检查权限：不能修改权限高于自己的用户的密码
@@ -71,5 +98,6 @@ def reset_password(
     from app.core.security import get_password_hash
     user.hashed_password = get_password_hash(password_in.new_password)
     db.commit()
-    logger.warning(f"Librarian/Admin '{current_user.username}' reset password for user '{user.username}'")
+    
+    logger.info(f"✅ [密码重置成功] 用户 '{current_user.username}' 为用户 '{user.username}' (ID: {user.id}) 重置了密码")
     return {"msg": "Password reset successfully"}
