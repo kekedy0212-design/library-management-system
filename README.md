@@ -3,11 +3,51 @@
 本项目是一个基于 Web 的全功能图书管理解决方案。系统通过迭代开发，逐步实现从基础借阅到高级自动化管理的完整流程。
 
 ## 🛠 技术栈
-* **前端**: React.js
-* **后端**: Node.js
+* **前端**: React.js + Material Web
+* **后端**: Python FastAPI
 * **数据库**: SQLite
+* **认证**: JWT Token
 
----
+## 🚀 快速启动
+
+### 方式一：完整自动设置（推荐用于新环境）
+```bash
+# Windows PowerShell（会自动安装所有依赖）
+.\start.ps1
+```
+
+此脚本会自动：
+- 检查并安装 Python/Node.js 环境
+- 创建后端虚拟环境
+- 安装前后端依赖
+- 创建必要的配置文件
+- 启动服务器
+
+### 方式二：手动设置
+```bash
+# 后端设置
+cd library-backend
+python -m venv venv
+venv\Scripts\activate  # Windows
+pip install -r requirements.txt
+
+# 前端设置
+cd ../library-frontend
+npm install
+
+# 启动
+# 后端终端: cd library-backend && venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+# 前端终端: cd library-frontend && npm start
+```
+
+### 访问地址
+- **前端应用**: http://localhost:3000
+- **后端API**: http://localhost:8000
+- **API文档**: http://localhost:8000/docs
+
+### 默认管理员账号
+- 用户名: `admin`
+- 密码: `admin123`
 
 ## 📅 迭代开发路线图 (Product Backlog)
 
