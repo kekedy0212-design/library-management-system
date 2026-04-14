@@ -26,7 +26,7 @@ export const hasPermission = (requiredRole) => {
     [ROLES.ADMIN]: 3,
   };
 
-  return roleHierarchy[userRole] > roleHierarchy[requiredRole];
+  return roleHierarchy[userRole] >= roleHierarchy[requiredRole];
 };
 
 export const isAdmin = () => getUserRole() === ROLES.ADMIN;
