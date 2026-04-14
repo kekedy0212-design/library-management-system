@@ -6,6 +6,7 @@ import { borrowService } from '../../services/borrowService';
 import { formatDate, getStatusText, getStatusColor } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
+import MdCard from '../../components/MdCard';
 
 const BorrowHistory = () => {
   const dispatch = useDispatch();
@@ -28,87 +29,170 @@ const BorrowHistory = () => {
   }, [fetchHistory]);
 
   const handleReturn = async (recordId) => {
-    if (!window.confirm('确定要申请归还这本书吗？')) {
+    if (!window.confirm('Are you sure you want to request to return this book?')) {
       return;
     }
 
     setReturnLoading(recordId);
     try {
       await borrowService.returnRequest(recordId);
-      alert('还书请求已提交，请等待管理员审批');
-      await fetchHistory(); // 重新获取历史记录
+      alert('Return request submitted. Please wait for librarian approval.');
+      await fetchHistory();
     } catch (err) {
-      alert(`还书失败: ${err.response?.data?.detail || err.message}`);
+      alert(`Return failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setReturnLoading(null);
     }
   };
 
-  if (loading) return <div className="loading">加载中...</div>;
-  if (error) return <div className="error">{error}</div>;
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading your records...</div>;
+  if (error) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--md-sys-color-error)' }}>{error}</div>;
 
   return (
-    <div>
-      <h2>借阅历史</h2>
-      
-      {hasPermission(ROLES.LIBRARIAN) && (
-        <div className="card">
-          <button className="btn" onClick={() => navigate('/admin/requests')}>处理待审批请求</button>
+    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px' }}>
+      <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: 0 }}>Borrowing Activity</h2>
+          <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Track your library history and pending requests</p>
         </div>
-      )}
 
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>书名</th>
-              <th>ISBN</th>
-              <th>申请时间</th>
-              <th>审批时间</th>
-              <th>到期时间</th>
-              <th>归还时间</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {borrowHistory.map(record => (
-              <tr key={record.id}>
-                <td>{record.book?.title}</td>
-                <td>{record.book?.isbn}</td>
-                <td>{formatDate(record.request_date)}</td>
-                <td>{formatDate(record.approve_date)}</td>
-                <td>{formatDate(record.due_date)}</td>
-                <td>{formatDate(record.actual_return_date)}</td>
-                <td>
-                  <span style={{ color: getStatusColor(record.status) }}>
-                    {getStatusText(record.status)}
-                  </span>
-                </td>
-                <td>
-                  {record.status === 'approved' && (
-                    <button
-                      className="btn"
-                      onClick={() => handleReturn(record.id)}
-                      disabled={returnLoading === record.id}
-                    >
-                      {returnLoading === record.id ? '处理中...' : '申请归还'}
-                    </button>
-                  )}
-                  {hasPermission(ROLES.LIBRARIAN) && record.status === 'pending' && (
-                    <>
-                      <button className="btn">批准</button>
-                      <button className="btn btn-danger">拒绝</button>
-                    </>
-                  )}
-                </td>
+        {hasPermission(ROLES.LIBRARIAN) && (
+          <button
+            onClick={() => navigate('/admin/requests')}
+            style={{
+              padding: '12px 24px',
+              borderRadius: '100px',
+              border: 'none',
+              backgroundColor: 'var(--md-sys-color-tertiary-container, #ffd8e4)',
+              color: 'var(--md-sys-color-on-tertiary-container, #31111d)',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            Review Requests
+          </button>
+        )}
+      </header>
+
+      <MdCard variant="outlined">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)' }}>
+                <th style={tableHeaderStyle}>Book Details</th>
+                <th style={tableHeaderStyle}>Requested</th>
+                <th style={tableHeaderStyle}>Due Date</th>
+                <th style={tableHeaderStyle}>Status</th>
+                <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {borrowHistory.map(record => (
+                <tr key={record.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)', transition: 'background 0.2s' }}>
+                  <td style={tableCellStyle}>
+                    <div style={{ fontWeight: '500' }}>{record.book?.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#666' }}>ISBN: {record.book?.isbn}</div>
+                  </td>
+                  <td style={tableCellStyle}>{formatDate(record.request_date)}</td>
+                  <td style={tableCellStyle}>
+                    {record.due_date ? (
+                      <span style={{ color: isOverdue(record.due_date) ? 'var(--md-sys-color-error)' : 'inherit' }}>
+                        {formatDate(record.due_date)}
+                      </span>
+                    ) : '-'}
+                  </td>
+                  <td style={tableCellStyle}>
+                    <StatusBadge status={record.status} />
+                  </td>
+                  <td style={{ ...tableCellStyle, textAlign: 'right' }}>
+                    {record.status === 'approved' && (
+                      <button
+                        onClick={() => handleReturn(record.id)}
+                        disabled={returnLoading === record.id}
+                        style={actionButtonStyle}
+                      >
+                        {returnLoading === record.id ? 'Processing...' : 'Return Book'}
+                      </button>
+                    )}
+                    {hasPermission(ROLES.LIBRARIAN) && record.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button style={actionButtonStyle}>Approve</button>
+                        <button style={{ ...actionButtonStyle, color: 'var(--md-sys-color-error)' }}>Deny</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {borrowHistory.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--md-sys-color-on-surface-variant)' }}>
+              No borrowing history found.
+            </div>
+          )}
+        </div>
+      </MdCard>
     </div>
   );
+};
+
+// --- Styled Helpers ---
+
+const tableHeaderStyle = {
+  padding: '16px',
+  fontSize: '0.85rem',
+  color: 'var(--md-sys-color-on-surface-variant)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px'
+};
+
+const tableCellStyle = {
+  padding: '16px',
+  fontSize: '0.95rem',
+  verticalAlign: 'middle'
+};
+
+const actionButtonStyle = {
+  background: 'transparent',
+  border: '1px solid var(--md-sys-color-outline)',
+  borderRadius: '8px',
+  padding: '6px 16px',
+  fontSize: '0.875rem',
+  fontWeight: '500',
+  color: 'var(--md-sys-color-primary)',
+  cursor: 'pointer',
+};
+
+const StatusBadge = ({ status }) => {
+  // MD3 Color Mapping for Statuses
+  const colors = {
+    pending: { bg: '#fff7e6', text: '#b26b00', label: 'Pending' },
+    approved: { bg: '#e8f5e9', text: '#2e7d32', label: 'On Loan' },
+    returned: { bg: '#f0f0f0', text: '#555555', label: 'Returned' },
+    rejected: { bg: '#f9e8e8', text: '#b3261e', label: 'Rejected' }
+  };
+
+  const config = colors[status] || { bg: '#eee', text: '#333', label: status };
+
+  return (
+    <span style={{
+      backgroundColor: config.bg,
+      color: config.text,
+      padding: '4px 12px',
+      borderRadius: '12px',
+      fontSize: '0.75rem',
+      fontWeight: '600',
+      display: 'inline-block'
+    }}>
+      {config.label}
+    </span>
+  );
+};
+
+const isOverdue = (dateString) => {
+  if (!dateString) return false;
+  return new Date(dateString) < new Date();
 };
 
 export default BorrowHistory;

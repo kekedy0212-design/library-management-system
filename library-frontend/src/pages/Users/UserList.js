@@ -3,6 +3,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { formatDate } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
+import MdCard from '../../components/MdCard';
 
 const UserList = () => {
   const { users, loading, error, fetchUsers, updateUserStatus, updateUserRole, resetUserPassword } = useUsers();
@@ -16,24 +17,25 @@ const UserList = () => {
   }, [fetchUsers]);
 
   if (!hasPermission(ROLES.LIBRARIAN)) {
-    return <div className="error">权限不足</div>;
+    return <div style={{ color: 'var(--md-sys-color-error)', padding: '20px' }}>Insufficient permissions.</div>;
   }
 
-  if (loading) return <div className="loading">加载中...</div>;
-  if (error) return <div className="error">{error}</div>;
+  if (loading) return <div style={{ textAlign: 'center', padding: '40px' }}>Loading Users...</div>;
+  if (error) return <div style={{ color: 'var(--md-sys-color-error)', padding: '20px' }}>{error}</div>;
 
   const handleToggleStatus = (user) => {
-    const action = user.is_active ? '禁用' : '启用';
+    const action = user.is_active ? 'Disable' : 'Enable';
     setConfirmDialog({
-      title: `${action}用户`,
-      message: `确定要${action}用户 "${user.username}" 吗？`,
+      title: `${action} User`,
+      message: `Are you sure you want to ${action.toLowerCase()} user "${user.username}"?`,
+      confirmLabel: action,
+      isDanger: user.is_active,
       onConfirm: async () => {
         const result = await updateUserStatus(user.id, !user.is_active);
         if (result.success) {
-          alert(`${action}成功`);
-          fetchUsers(); // 刷新列表
+          fetchUsers();
         } else {
-          alert(`操作失败: ${result.error}`);
+          alert(`Operation failed: ${result.error}`);
         }
         setConfirmDialog(null);
       },
@@ -47,9 +49,9 @@ const UserList = () => {
       onConfirm: async (newPassword) => {
         const result = await resetUserPassword(user.id, newPassword);
         if (result.success) {
-          alert('密码重置成功');
+          alert('Password reset successfully');
         } else {
-          alert(`密码重置失败: ${result.error}`);
+          alert(`Failed to reset password: ${result.error}`);
         }
         setResetPasswordDialog(null);
       },
@@ -59,17 +61,18 @@ const UserList = () => {
 
   const handlePromoteRole = (user) => {
     const newRole = user.role === 'reader' ? 'librarian' : 'admin';
-    const roleName = newRole === 'librarian' ? '图书管理员' : '管理员';
+    const roleName = newRole === 'librarian' ? 'Librarian' : 'Administrator';
     setConfirmDialog({
-      title: '提升角色',
-      message: `确定要将用户 "${user.username}" 的角色提升为 ${roleName} 吗？`,
+      title: 'Promote Role',
+      message: `Promote "${user.username}" to ${roleName}?`,
+      confirmLabel: 'Promote',
+      isDanger: false,
       onConfirm: async () => {
         const result = await updateUserRole(user.id, newRole);
         if (result.success) {
-          alert('角色提升成功');
-          fetchUsers(); // 刷新列表
+          fetchUsers();
         } else {
-          alert(`操作失败: ${result.error}`);
+          alert(`Operation failed: ${result.error}`);
         }
         setConfirmDialog(null);
       },
@@ -78,81 +81,86 @@ const UserList = () => {
   };
 
   return (
-    <div>
-      <h2>用户管理</h2>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+      <h2 style={{ fontSize: '2rem', fontWeight: '400', marginBottom: '24px', color: 'var(--md-sys-color-on-surface)' }}>
+        User Management
+      </h2>
 
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>用户名</th>
-              <th>邮箱</th>
-              <th>角色</th>
-              <th>状态</th>
-              <th>创建时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(user => (
-              <tr key={user.id}>
-                <td>{user.username}</td>
-                <td>{user.email}</td>
-                <td>
-                  {user.role === 'admin' ? '管理员' :
-                   user.role === 'librarian' ? '图书管理员' : '读者'}
-                </td>
-                <td>{user.is_active ? '激活' : '未激活'}</td>
-                <td>{formatDate(user.created_at)}</td>
-                <td>
-                  <button
-                    className={`btn ${user.is_active ? 'btn-danger' : 'btn-success'}`}
-                    onClick={() => handleToggleStatus(user)}
-                  >
-                    {user.is_active ? '禁用' : '启用'}
-                  </button>
-                  {hasPermission(ROLES.LIBRARIAN) && (
-                    <button
-                      className="btn btn-warning"
-                      onClick={() => handleResetPassword(user)}
-                    >
-                      重置密码
-                    </button>
-                  )}
-                  {hasPermission(ROLES.ADMIN) && user.role !== 'admin' && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handlePromoteRole(user)}
-                    >
-                      提升角色
-                    </button>
-                  )}
-                </td>
+      <MdCard variant="elevated">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)' }}>
+                <th style={thStyle}>Username</th>
+                <th style={thStyle}>Email</th>
+                <th style={thStyle}>Role</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}>Joined</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {users.map(user => (
+                <tr key={user.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)' }}>
+                  <td style={tdStyle}>{user.username}</td>
+                  <td style={tdStyle}>{user.email}</td>
+                  <td style={tdStyle}>
+                    <RoleBadge role={user.role} />
+                  </td>
+                  <td style={tdStyle}>
+                    <StatusDot active={user.is_active} />
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </td>
+                  <td style={tdStyle}>{formatDate(user.created_at)}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <button
+                        style={user.is_active ? ghostBtnDanger : ghostBtnSuccess}
+                        onClick={() => handleToggleStatus(user)}
+                      >
+                        {user.is_active ? 'Disable' : 'Enable'}
+                      </button>
 
-      {/* 确认对话框 */}
-      {confirmDialog && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3>{confirmDialog.title}</h3>
-            <p>{confirmDialog.message}</p>
-            <div className="modal-actions">
-              <button className="btn btn-danger" onClick={confirmDialog.onConfirm}>
-                确认
-              </button>
-              <button className="btn btn-secondary" onClick={confirmDialog.onCancel}>
-                取消
-              </button>
-            </div>
-          </div>
+                      <button style={ghostBtnPrimary} onClick={() => handleResetPassword(user)}>
+                        Reset PWD
+                      </button>
+
+                      {hasPermission(ROLES.ADMIN) && user.role !== 'admin' && (
+                        <button style={filledBtnSmall} onClick={() => handlePromoteRole(user)}>
+                          Promote
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </MdCard>
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <Dialog
+          title={confirmDialog.title}
+          onCancel={confirmDialog.onCancel}
+        >
+          <p style={{ color: 'var(--md-sys-color-on-surface-variant)', marginBottom: '24px' }}>
+            {confirmDialog.message}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <button style={textBtn} onClick={confirmDialog.onCancel}>Cancel</button>
+            <button
+              style={confirmDialog.isDanger ? filledBtnDanger : filledBtnPrimary}
+              onClick={confirmDialog.onConfirm}
+            >
+              {confirmDialog.confirmLabel}
+            </button>
+          </div>
+        </Dialog>
       )}
 
-      {/* 重置密码对话框 */}
+      {/* Reset Password Dialog */}
       {resetPasswordDialog && (
         <ResetPasswordDialog
           user={resetPasswordDialog.user}
@@ -164,6 +172,8 @@ const UserList = () => {
   );
 };
 
+// --- MD3 Sub-Components ---
+
 const ResetPasswordDialog = ({ user, onConfirm, onCancel }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -171,53 +181,118 @@ const ResetPasswordDialog = ({ user, onConfirm, onCancel }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      alert('两次输入的密码不一致');
-      return;
-    }
-    if (newPassword.length < 6) {
-      alert('密码长度至少6位');
+      alert('Passwords do not match');
       return;
     }
     onConfirm(newPassword);
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <h3>重置密码 - {user.username}</h3>
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>新密码：</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength="6"
-            />
-          </div>
-          <div className="form-group">
-            <label>确认密码：</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              minLength="6"
-            />
-          </div>
-          <div className="modal-actions">
-            <button type="submit" className="btn btn-primary">
-              确认重置
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={onCancel}>
-              取消
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Dialog title={`Reset Password - ${user.username}`} onCancel={onCancel}>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '16px' }}>
+          <label style={labelStyle}>New Password</label>
+          <input
+            type="password"
+            style={inputStyle}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength="6"
+          />
+        </div>
+        <div style={{ marginBottom: '24px' }}>
+          <label style={labelStyle}>Confirm Password</label>
+          <input
+            type="password"
+            style={inputStyle}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength="6"
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <button type="button" style={textBtn} onClick={onCancel}>Cancel</button>
+          <button type="submit" style={filledBtnPrimary}>Confirm Reset</button>
+        </div>
+      </form>
+    </Dialog>
   );
 };
+
+const Dialog = ({ title, children, onCancel }) => (
+  <div style={overlayStyle} onClick={onCancel}>
+    <div style={modalStyle} onClick={e => e.stopPropagation()}>
+      <h3 style={{ marginTop: 0, marginBottom: '16px', fontWeight: '400', fontSize: '1.5rem' }}>{title}</h3>
+      {children}
+    </div>
+  </div>
+);
+
+const RoleBadge = ({ role }) => {
+  const styles = {
+    admin: { bg: 'var(--md-sys-color-error-container)', color: 'var(--md-sys-color-on-error-container)', label: 'Admin' },
+    librarian: { bg: 'var(--md-sys-color-primary-container)', color: 'var(--md-sys-color-on-primary-container)', label: 'Librarian' },
+    reader: { bg: 'var(--md-sys-color-surface-variant)', color: 'var(--md-sys-color-on-surface-variant)', label: 'Reader' }
+  };
+  const s = styles[role] || styles.reader;
+  return (
+    <span style={{
+      padding: '2px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: '500',
+      backgroundColor: s.bg, color: s.color
+    }}>
+      {s.label}
+    </span>
+  );
+};
+
+const StatusDot = ({ active }) => (
+  <span style={{
+    display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px',
+    backgroundColor: active ? '#4CAF50' : '#F44336'
+  }} />
+);
+
+// --- Styles ---
+
+const thStyle = { padding: '16px', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '0.85rem', fontWeight: '500' };
+const tdStyle = { padding: '16px', verticalAlign: 'middle', fontSize: '0.9rem' };
+
+const overlayStyle = {
+  position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+  backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+};
+
+const modalStyle = {
+  backgroundColor: 'var(--md-sys-color-surface-container-high, #fff)',
+  padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px',
+  boxShadow: 'var(--md-sys-elevation-level3)'
+};
+
+const inputStyle = {
+  width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--md-sys-color-outline)',
+  backgroundColor: 'transparent', boxSizing: 'border-box', marginTop: '4px'
+};
+
+const labelStyle = { fontSize: '0.8rem', color: 'var(--md-sys-color-on-surface-variant)' };
+
+const ghostBtnBase = {
+  background: 'none', border: 'none', padding: '6px 12px', borderRadius: '8px',
+  cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500'
+};
+
+const ghostBtnPrimary = { ...ghostBtnBase, color: 'var(--md-sys-color-primary)' };
+const ghostBtnDanger = { ...ghostBtnBase, color: 'var(--md-sys-color-error)' };
+const ghostBtnSuccess = { ...ghostBtnBase, color: '#2E7D32' };
+
+const filledBtnBase = {
+  border: 'none', padding: '10px 24px', borderRadius: '100px', cursor: 'pointer', fontWeight: '500'
+};
+
+const filledBtnPrimary = { ...filledBtnBase, backgroundColor: 'var(--md-sys-color-primary)', color: 'var(--md-sys-color-on-primary)' };
+const filledBtnDanger = { ...filledBtnBase, backgroundColor: 'var(--md-sys-color-error)', color: 'var(--md-sys-color-on-error)' };
+const filledBtnSmall = { ...filledBtnBase, padding: '6px 16px', fontSize: '0.85rem', backgroundColor: 'var(--md-sys-color-secondary-container)', color: 'var(--md-sys-color-on-secondary-container)' };
+const textBtn = { ...ghostBtnBase, padding: '10px 24px' };
 
 export default UserList;

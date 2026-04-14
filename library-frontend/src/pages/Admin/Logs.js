@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { adminService } from '../../services/adminService';
 import { isAdmin } from '../../utils/auth';
+import MdCard from '../../components/MdCard';
 
 const Logs = () => {
   const [logs, setLogs] = useState('');
@@ -28,51 +29,147 @@ const Logs = () => {
   }, [fetchLogs]);
 
   if (!isAdmin()) {
-    return <div className="error">权限不足</div>;
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--md-sys-color-error)' }}>
+        Access Denied. Administrator credentials required.
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h2>系统日志</h2>
-      
-      <div className="card">
-        <div className="form-group">
-          <label htmlFor="lines">显示行数</label>
-          <select
-            id="lines"
-            value={lines}
-            onChange={(e) => setLines(Number(e.target.value))}
-          >
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-            <option value={200}>200</option>
-            <option value={500}>500</option>
-            <option value={1000}>1000</option>
-          </select>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+      <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: 0 }}>System Logs</h2>
+          <p style={{ color: 'var(--md-sys-color-on-surface-variant)', marginTop: '4px' }}>
+            Monitor real-time backend events and error reports.
+          </p>
         </div>
-        <button className="btn" onClick={fetchLogs} disabled={loading}>
-          刷新日志
-        </button>
-      </div>
 
-      {loading && <div className="loading">加载中...</div>}
-      {error && <div className="error">{error}</div>}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label htmlFor="lines" style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--md-sys-color-on-surface-variant)' }}>
+              Lines to display
+            </label>
+            <select
+              id="lines"
+              value={lines}
+              onChange={(e) => setLines(Number(e.target.value))}
+              style={selectStyle}
+            >
+              {[50, 100, 200, 500, 1000].map(val => (
+                <option key={val} value={val}>{val} lines</option>
+              ))}
+            </select>
+          </div>
 
-      <div className="card">
-        <h3>日志内容</h3>
-        <pre style={{ 
-          backgroundColor: '#f8f9fa', 
-          padding: '1rem', 
-          borderRadius: '4px',
-          fontSize: '0.9rem',
-          overflow: 'auto',
-          maxHeight: '600px'
-        }}>
-          {logs || '暂无日志'}
+          <button
+            onClick={fetchLogs}
+            disabled={loading}
+            style={{
+              ...refreshBtnStyle,
+              backgroundColor: loading ? 'var(--md-sys-color-surface-variant)' : 'var(--md-sys-color-primary-container)'
+            }}
+          >
+            {loading ? 'Fetching...' : 'Refresh Logs'}
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div style={errorBannerStyle}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      <MdCard variant="outlined" style={{ padding: 0, backgroundColor: '#1C1B1F', overflow: 'hidden' }}>
+        <div style={terminalHeaderStyle}>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ ...dotStyle, backgroundColor: '#FF5F56' }} />
+            <div style={{ ...dotStyle, backgroundColor: '#FFBD2E' }} />
+            <div style={{ ...dotStyle, backgroundColor: '#27C93F' }} />
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#938F99', fontFamily: 'monospace' }}>server.log</span>
+        </div>
+
+        <pre style={logPreStyle}>
+          {loading ? (
+            <span style={{ color: '#938F99' }}>Synchronizing with server...</span>
+          ) : (
+            logs || 'No log entries found for this period.'
+          )}
         </pre>
-      </div>
+      </MdCard>
+
+      <footer style={{ marginTop: '16px', fontSize: '0.8rem', color: 'var(--md-sys-color-outline)' }}>
+        Last updated: {new Date().toLocaleTimeString()}
+      </footer>
     </div>
   );
+};
+
+// --- Styles ---
+
+const selectStyle = {
+  padding: '8px 12px',
+  borderRadius: '8px',
+  border: '1px solid var(--md-sys-color-outline)',
+  backgroundColor: 'var(--md-sys-color-surface)',
+  fontSize: '0.9rem',
+  color: 'var(--md-sys-color-on-surface)',
+  outline: 'none',
+  cursor: 'pointer'
+};
+
+const refreshBtnStyle = {
+  height: '40px',
+  padding: '0 20px',
+  borderRadius: '20px',
+  border: 'none',
+  color: 'var(--md-sys-color-on-primary-container)',
+  fontWeight: '500',
+  fontSize: '0.875rem',
+  cursor: 'pointer',
+  transition: 'opacity 0.2s',
+  marginTop: '18px'
+};
+
+const terminalHeaderStyle = {
+  backgroundColor: '#2B2930',
+  padding: '12px 16px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  borderBottom: '1px solid #49454F'
+};
+
+const dotStyle = {
+  width: '10px',
+  height: '10px',
+  borderRadius: '50%'
+};
+
+const logPreStyle = {
+  margin: 0,
+  padding: '20px',
+  color: '#E6E1E5',
+  backgroundColor: '#1C1B1F',
+  fontSize: '0.85rem',
+  fontFamily: '"Roboto Mono", "Fira Code", monospace',
+  lineHeight: '1.5',
+  overflow: 'auto',
+  maxHeight: '650px',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-all'
+};
+
+const errorBannerStyle = {
+  backgroundColor: 'var(--md-sys-color-error-container)',
+  color: 'var(--md-sys-color-on-error-container)',
+  padding: '16px',
+  borderRadius: '12px',
+  marginBottom: '24px',
+  fontSize: '0.9rem'
 };
 
 export default Logs;
