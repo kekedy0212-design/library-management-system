@@ -20,6 +20,11 @@
 
 ## 安装与运行
 
+在library-frontend目录下创建一个.env文件,文件内容：
+```bash
+REACT_APP_API_BASE_URL=http://localhost:8000/api/v1
+```
+
 1. 安装依赖：
    ```bash
    npm install
