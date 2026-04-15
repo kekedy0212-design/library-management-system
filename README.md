@@ -24,21 +24,7 @@
 - 启动服务器
 
 ### 方式二：手动设置
-```bash
-# 后端设置
-cd library-backend
-python -m venv venv
-venv\Scripts\activate  # Windows
-pip install -r requirements.txt
-
-# 前端设置
-cd ../library-frontend
-npm install
-
-# 启动
-# 后端终端: cd library-backend && venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
-# 前端终端: cd library-frontend && npm start
-```
+分别按照前后端的 `README.md` 文档进行设置。
 
 ### 访问地址
 - **前端应用**: http://localhost:3000
