@@ -50,7 +50,6 @@ def update_user(
 
     old_role = user.role.value
     old_active = user.is_active
-    old_email = user.email
 
     user = crud_user.update_user(db, user, user_in)
 
@@ -65,10 +64,6 @@ def update_user(
         status_text = "已禁用" if not user.is_active else "已启用"
         changes.append(f"状态: {status_text}")
         logger.info(f"⚠️ [用户状态变更] 用户 '{current_user.username}' {action}了用户 '{user.username}' | 新状态: {status_text}")
-    
-    if user_in.email is not None and old_email != user.email:
-        changes.append(f"邮箱: {old_email} → {user.email}")
-        logger.debug(f"📧 [邮箱变更] 用户 '{user.username}' 的邮箱已更改")
     
     if changes:
         logger.info(f"✅ [用户更新成功] 用户 '{user.username}' (ID: {user.id}) 的信息已更新 | 修改项: {', '.join(changes)}")
