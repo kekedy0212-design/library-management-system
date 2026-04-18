@@ -48,6 +48,18 @@ def update_user(
     if user_in.is_active is not None or user_in.role is not None:
         check_permission_hierarchy(current_user, user)
 
+    # 禁用前校验：有在借书籍的用户不能被禁用
+    if user_in.is_active is False and user.is_active:
+        active_borrow_count = crud_user.get_active_borrow_count(db, user.id)
+        if active_borrow_count > 0:
+            logger.warning(
+                f"❌ [用户更新失败] 用户仍有在借书籍，禁止禁用 | 用户: {user.username} | 在借数量: {active_borrow_count}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot disable user with active borrowed books"
+            )
+
     old_role = user.role.value
     old_active = user.is_active
 

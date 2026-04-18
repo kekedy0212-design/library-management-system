@@ -10,9 +10,41 @@ class BorrowRequestCreate(BaseModel):
 class ReturnRequestCreate(BaseModel):
     borrow_record_id: int
 
+class BatchReturnRequestCreate(BaseModel):
+    borrow_record_ids: list[int]
+
+class BatchReturnRequestResult(BaseModel):
+    borrow_record_id: int
+    success: bool
+    message: str
+    record: dict | None = None
+
+class BatchReturnRequestResponse(BaseModel):
+    total: int
+    success_count: int
+    failure_count: int
+    results: list[BatchReturnRequestResult]
+
 class RequestProcess(BaseModel):
     action: str  # "approve" or "reject"
     notes: str | None = None
+
+class BatchRequestProcess(BaseModel):
+    request_ids: list[int]
+    action: str  # "approve" or "reject"
+    notes: str | None = None
+
+class BatchRequestProcessResult(BaseModel):
+    request_id: int
+    success: bool
+    message: str
+    record: dict | None = None
+
+class BatchRequestProcessResponse(BaseModel):
+    total: int
+    success_count: int
+    failure_count: int
+    results: list[BatchRequestProcessResult]
 
 class BorrowRecordPublic(BaseModel):
     id: int

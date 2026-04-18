@@ -11,6 +11,8 @@ const RequestApproval = () => {
   const dispatch = useDispatch();
   const { pendingRequests, loading, error } = useSelector(state => state.borrow);
   const [processingId, setProcessingId] = useState(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [selectedRequestIds, setSelectedRequestIds] = useState([]);
   const [notes, setNotes] = useState('');
 
   const fetchPendingRequests = useCallback(async () => {
@@ -28,6 +30,11 @@ const RequestApproval = () => {
       fetchPendingRequests();
     }
   }, [fetchPendingRequests]);
+
+  useEffect(() => {
+    const pendingIds = new Set(pendingRequests.map(request => request.id));
+    setSelectedRequestIds(prev => prev.filter(id => pendingIds.has(id)));
+  }, [pendingRequests]);
 
   const handleProcessRequest = async (requestId, action) => {
     const actionLabel = action === 'approve' ? 'approve' : 'reject';
@@ -49,6 +56,50 @@ const RequestApproval = () => {
     }
   };
 
+  const allSelected = pendingRequests.length > 0 && selectedRequestIds.length === pendingRequests.length;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedRequestIds([]);
+      return;
+    }
+    setSelectedRequestIds(pendingRequests.map(request => request.id));
+  };
+
+  const toggleSelectOne = (requestId) => {
+    setSelectedRequestIds(prev => {
+      if (prev.includes(requestId)) {
+        return prev.filter(id => id !== requestId);
+      }
+      return [...prev, requestId];
+    });
+  };
+
+  const handleBatchProcess = async (action) => {
+    const actionLabel = action === 'approve' ? 'approve' : 'reject';
+    if (selectedRequestIds.length === 0) {
+      alert('Please select at least one request.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to ${actionLabel} ${selectedRequestIds.length} selected request(s)?`)) {
+      return;
+    }
+
+    setBatchProcessing(true);
+    try {
+      const response = await borrowService.processRequestsBatch(selectedRequestIds, action, notes);
+      const { success_count, failure_count } = response.data;
+      alert(`Batch ${actionLabel} completed. Success: ${success_count}, Failed: ${failure_count}`);
+      setSelectedRequestIds([]);
+      setNotes('');
+      await fetchPendingRequests();
+    } catch (err) {
+      alert(`Batch operation failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
   if (!hasPermission(ROLES.LIBRARIAN)) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: 'var(--md-sys-color-error)' }}>
@@ -67,6 +118,22 @@ const RequestApproval = () => {
         <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>
           Review and process book loan or return requests from library members.
         </p>
+        <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => handleBatchProcess('approve')}
+            disabled={batchProcessing || selectedRequestIds.length === 0 || processingId !== null}
+            style={approveBtnStyle}
+          >
+            {batchProcessing ? 'Processing...' : `Approve Selected `}
+          </button>
+          <button
+            onClick={() => handleBatchProcess('reject')}
+            disabled={batchProcessing || selectedRequestIds.length === 0 || processingId !== null}
+            style={rejectBtnStyle}
+          >
+            Reject Selected
+          </button>
+        </div>
       </header>
 
       <MdCard variant="outlined">
@@ -101,6 +168,15 @@ const RequestApproval = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--md-sys-color-surface-container-lowest)' }}>
+                <th style={thStyle}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    disabled={pendingRequests.length === 0 || batchProcessing || processingId !== null}
+                    aria-label="Select all requests"
+                  />
+                </th>
                 <th style={thStyle}>Type</th>
                 <th style={thStyle}>Book Title</th>
                 <th style={thStyle}>Member</th>
@@ -111,6 +187,15 @@ const RequestApproval = () => {
             <tbody>
               {pendingRequests.map(request => (
                 <tr key={request.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)' }}>
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      checked={selectedRequestIds.includes(request.id)}
+                      onChange={() => toggleSelectOne(request.id)}
+                      disabled={batchProcessing || processingId !== null}
+                      aria-label={`Select request ${request.id}`}
+                    />
+                  </td>
                   <td style={tdStyle}>
                     <TypeBadge status={request.status} />
                   </td>
@@ -124,14 +209,14 @@ const RequestApproval = () => {
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                       <button
                         onClick={() => handleProcessRequest(request.id, 'approve')}
-                        disabled={processingId === request.id}
+                        disabled={processingId === request.id || batchProcessing}
                         style={approveBtnStyle}
                       >
                         {processingId === request.id ? '...' : 'Approve'}
                       </button>
                       <button
                         onClick={() => handleProcessRequest(request.id, 'reject')}
-                        disabled={processingId === request.id}
+                        disabled={processingId === request.id || batchProcessing}
                         style={rejectBtnStyle}
                       >
                         Reject

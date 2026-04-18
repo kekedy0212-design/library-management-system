@@ -104,8 +104,13 @@ def delete_book(
 ):
     """删除书籍（仅图书管理员）"""
     logger.info(f"🗑️ [书籍删除] 用户 '{current_user.username}' 开始删除书籍 | ID: {book_id}")
-    
-    book = crud_book.delete_book(db, book_id)
+
+    try:
+        book = crud_book.delete_book(db, book_id)
+    except ValueError as e:
+        logger.error(f"❌ [书籍删除失败] {str(e)} | ID: {book_id}")
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not book:
         logger.warning(f"⚠️ [书籍删除失败] 书籍未找到 | ID: {book_id}")
         raise HTTPException(status_code=404, detail="Book not found")

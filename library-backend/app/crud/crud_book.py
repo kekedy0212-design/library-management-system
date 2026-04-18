@@ -51,6 +51,21 @@ def get_borrowed_count(db: Session, book_id: int) -> int:
     logger.debug(f"📊 [CRUD] 书籍 ID {book_id} 当前在借数: {count}")
     return count
 
+def get_active_borrowed_count(db: Session, book_id: int) -> int:
+    """
+    统计当前“实际借出中”的数量。
+    不包含 PENDING（仅申请中）与已结束状态。
+    """
+    active_statuses = [
+        BorrowStatus.APPROVED,
+        BorrowStatus.OVERDUE,
+        BorrowStatus.RETURN_PENDING
+    ]
+    return db.query(BorrowRecord).filter(
+        BorrowRecord.book_id == book_id,
+        BorrowRecord.status.in_(active_statuses)
+    ).count()
+
 def create_book(db: Session, book_in: BookCreate):
     """创建书籍时，自动将available_copies设置为total_copies"""
     db_book = Book(
@@ -112,6 +127,13 @@ def update_book(db: Session, db_book: Book, book_in: BookUpdate):
 def delete_book(db: Session, book_id: int):
     book = db.query(Book).filter(Book.id == book_id).first()
     if book:
+        active_borrowed_count = get_active_borrowed_count(db, book_id)
+        if active_borrowed_count > 0:
+            logger.warning(
+                f"❌ [CRUD] 删除书籍失败 | 书籍 ID: {book_id} | 仍在借数量: {active_borrowed_count}"
+            )
+            raise ValueError("Cannot delete book while it is actively borrowed")
+
         logger.info(f"🗑️ [CRUD] 删除书籍 | 书名: {book.title} | ISBN: {book.isbn} | ID: {book_id}")
         db.delete(book)
         db.commit()

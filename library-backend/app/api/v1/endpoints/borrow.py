@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.borrow import (
     BorrowRequestCreate, ReturnRequestCreate,
-    RequestProcess, BorrowRecordPublic
+    RequestProcess, BorrowRecordPublic,
+    BatchRequestProcess, BatchRequestProcessResponse,
+    BatchReturnRequestCreate, BatchReturnRequestResponse
 )
 from app.crud import crud_borrow
 from app.api.deps import get_current_active_user, get_current_librarian
@@ -47,6 +49,54 @@ def request_return(
     
     logger.info(f"✅ [还书请求成功] 用户 '{current_user.username}' 成功创建还书请求 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
     return record
+
+@router.post("/return-requests/batch", response_model=BatchReturnRequestResponse)
+def request_return_batch(
+    request_in: BatchReturnRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """用户批量请求还书"""
+    if not request_in.borrow_record_ids:
+        raise HTTPException(status_code=400, detail="borrow_record_ids cannot be empty")
+
+    logger.info(
+        f"📥 [批量还书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量还书 | "
+        f"数量: {len(request_in.borrow_record_ids)}"
+    )
+
+    success_count = 0
+    results = []
+    for record_id in request_in.borrow_record_ids:
+        record = crud_borrow.create_return_request(db, current_user.id, record_id)
+        if record:
+            success_count += 1
+            results.append({
+                "borrow_record_id": record_id,
+                "success": True,
+                "message": "Return request created",
+                "record": BorrowRecordPublic.model_validate(record).model_dump()
+            })
+        else:
+            results.append({
+                "borrow_record_id": record_id,
+                "success": False,
+                "message": "Invalid borrow record or book not borrowed",
+                "record": None
+            })
+
+    total = len(request_in.borrow_record_ids)
+    failure_count = total - success_count
+    logger.info(
+        f"✅ [批量还书请求完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量还书提交完成 | "
+        f"总数: {total} | 成功: {success_count} | 失败: {failure_count}"
+    )
+    return {
+        "total": total,
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "results": results
+    }
 
 @router.get("/requests/pending", response_model=List[BorrowRecordPublic])
 def get_pending_requests(
@@ -104,6 +154,90 @@ def process_request(
         logger.error(f"❌ [请求处理失败] 处理操作失败 | ID: {request_id}")
         raise HTTPException(status_code=400, detail="Processing failed")
     return record
+
+@router.post("/requests/process-batch", response_model=BatchRequestProcessResponse)
+def process_requests_batch(
+    process_in: BatchRequestProcess,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_librarian)
+):
+    """批量处理借/还书请求（批准或拒绝）"""
+    if process_in.action not in ["approve", "reject"]:
+        raise HTTPException(status_code=400, detail="Action must be approve or reject")
+    if not process_in.request_ids:
+        raise HTTPException(status_code=400, detail="request_ids cannot be empty")
+
+    logger.info(
+        f"⚙️ [批量请求处理] 图书管理员 '{current_user.username}' 开始批量处理请求 | "
+        f"数量: {len(process_in.request_ids)} | 操作: {process_in.action}"
+    )
+
+    results = []
+    success_count = 0
+    process_payload = RequestProcess(action=process_in.action, notes=process_in.notes)
+
+    for request_id in process_in.request_ids:
+        try:
+            record = crud_borrow.get_borrow_record(db, request_id)
+            if not record:
+                results.append({
+                    "request_id": request_id,
+                    "success": False,
+                    "message": "Request not found",
+                    "record": None
+                })
+                continue
+
+            if record.status.value == "pending":
+                processed = crud_borrow.process_borrow_request(db, request_id, process_payload)
+            elif record.status.value == "return_pending":
+                processed = crud_borrow.process_return_request(db, request_id, process_payload)
+            else:
+                results.append({
+                    "request_id": request_id,
+                    "success": False,
+                    "message": f"Request is not in pending state: {record.status.value}",
+                    "record": None
+                })
+                continue
+
+            if not processed:
+                results.append({
+                    "request_id": request_id,
+                    "success": False,
+                    "message": "Processing failed",
+                    "record": None
+                })
+                continue
+
+            success_count += 1
+            results.append({
+                "request_id": request_id,
+                "success": True,
+                "message": "Processed successfully",
+                "record": BorrowRecordPublic.model_validate(processed).model_dump()
+            })
+        except Exception as e:
+            logger.exception(f"❌ [批量请求处理失败] 请求 ID: {request_id} | 错误: {str(e)}")
+            results.append({
+                "request_id": request_id,
+                "success": False,
+                "message": f"Unexpected error: {str(e)}",
+                "record": None
+            })
+
+    total = len(process_in.request_ids)
+    failure_count = total - success_count
+    logger.info(
+        f"✅ [批量请求处理完成] 图书管理员 '{current_user.username}' 完成批量处理 | "
+        f"总数: {total} | 成功: {success_count} | 失败: {failure_count}"
+    )
+    return {
+        "total": total,
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "results": results
+    }
 
 @router.get("/users/me/borrow-history", response_model=List[BorrowRecordPublic])
 def get_my_history(

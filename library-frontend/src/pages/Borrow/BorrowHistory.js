@@ -13,6 +13,8 @@ const BorrowHistory = () => {
   const navigate = useNavigate();
   const { borrowHistory, loading, error } = useSelector(state => state.borrow);
   const [returnLoading, setReturnLoading] = useState(null);
+  const [batchReturning, setBatchReturning] = useState(false);
+  const [selectedReturnIds, setSelectedReturnIds] = useState([]);
 
   const fetchHistory = useCallback(async () => {
     dispatch(fetchBorrowHistoryStart());
@@ -27,6 +29,15 @@ const BorrowHistory = () => {
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
+
+  useEffect(() => {
+    const eligibleIds = new Set(
+      borrowHistory
+        .filter(record => record.status === 'approved')
+        .map(record => record.id)
+    );
+    setSelectedReturnIds(prev => prev.filter(id => eligibleIds.has(id)));
+  }, [borrowHistory]);
 
   const handleReturn = async (recordId) => {
     if (!window.confirm('Are you sure you want to request to return this book?')) {
@@ -45,6 +56,47 @@ const BorrowHistory = () => {
     }
   };
 
+  const returnableRecords = borrowHistory.filter(record => record.status === 'approved');
+  const allReturnableSelected =
+    returnableRecords.length > 0 && selectedReturnIds.length === returnableRecords.length;
+
+  const toggleSelectAllReturnable = () => {
+    if (allReturnableSelected) {
+      setSelectedReturnIds([]);
+      return;
+    }
+    setSelectedReturnIds(returnableRecords.map(record => record.id));
+  };
+
+  const toggleSelectReturn = (recordId) => {
+    setSelectedReturnIds(prev => (
+      prev.includes(recordId) ? prev.filter(id => id !== recordId) : [...prev, recordId]
+    ));
+  };
+
+  const handleBatchReturn = async () => {
+    if (selectedReturnIds.length === 0) {
+      alert('Please select at least one borrowed book.');
+      return;
+    }
+    if (!window.confirm(`Submit return request for ${selectedReturnIds.length} book(s)?`)) {
+      return;
+    }
+
+    setBatchReturning(true);
+    try {
+      const response = await borrowService.returnRequestBatch(selectedReturnIds);
+      const { success_count, failure_count } = response.data;
+      alert(`Batch return submitted. Success: ${success_count}, Failed: ${failure_count}`);
+      setSelectedReturnIds([]);
+      await fetchHistory();
+    } catch (err) {
+      alert(`Batch return failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setBatchReturning(false);
+    }
+  };
+
   if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading your records...</div>;
   if (error) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--md-sys-color-error)' }}>{error}</div>;
 
@@ -54,6 +106,22 @@ const BorrowHistory = () => {
         <div>
           <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: 0 }}>Borrowing Activity</h2>
           <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Track your library history and pending requests</p>
+          <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={handleBatchReturn}
+              disabled={batchReturning || returnLoading !== null || selectedReturnIds.length === 0}
+              style={actionButtonStyle}
+            >
+              {batchReturning ? 'Processing...' : `Return Selected (${selectedReturnIds.length})`}
+            </button>
+            <button
+              onClick={toggleSelectAllReturnable}
+              disabled={batchReturning || returnLoading !== null || returnableRecords.length === 0}
+              style={actionButtonStyle}
+            >
+              {allReturnableSelected ? 'Clear Selection' : 'Select All Returnable'}
+            </button>
+          </div>
         </div>
 
         {hasPermission(ROLES.LIBRARIAN) && (
@@ -79,6 +147,7 @@ const BorrowHistory = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)' }}>
+                <th style={tableHeaderStyle}>Select</th>
                 <th style={tableHeaderStyle}>Book Details</th>
                 <th style={tableHeaderStyle}>Requested</th>
                 <th style={tableHeaderStyle}>Due Date</th>
@@ -89,6 +158,15 @@ const BorrowHistory = () => {
             <tbody>
               {borrowHistory.map(record => (
                 <tr key={record.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)', transition: 'background 0.2s' }}>
+                  <td style={tableCellStyle}>
+                    <input
+                      type="checkbox"
+                      checked={selectedReturnIds.includes(record.id)}
+                      onChange={() => toggleSelectReturn(record.id)}
+                      disabled={record.status !== 'approved' || batchReturning || returnLoading !== null}
+                      aria-label={`Select borrow record ${record.id} for return`}
+                    />
+                  </td>
                   <td style={tableCellStyle}>
                     <div style={{ fontWeight: '500' }}>{record.book?.title}</div>
                     <div style={{ fontSize: '0.75rem', color: '#666' }}>ISBN: {record.book?.isbn}</div>
@@ -108,7 +186,7 @@ const BorrowHistory = () => {
                     {record.status === 'approved' && (
                       <button
                         onClick={() => handleReturn(record.id)}
-                        disabled={returnLoading === record.id}
+                        disabled={returnLoading === record.id || batchReturning}
                         style={actionButtonStyle}
                       >
                         {returnLoading === record.id ? 'Processing...' : 'Return Book'}

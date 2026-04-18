@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models.user import User
+from app.models.borrow import BorrowRecord, BorrowStatus
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import get_password_hash
 import logging
@@ -82,3 +83,18 @@ def authenticate_user(db: Session, username: str, password: str):
 
 def is_active(user: User) -> bool:
     return user.is_active
+
+def get_active_borrow_count(db: Session, user_id: int) -> int:
+    """
+    统计用户当前“正在借阅中”的记录数量。
+    不包含 PENDING（仅申请中）和 RETURNED/REJECTED（已结束）状态。
+    """
+    active_statuses = [
+        BorrowStatus.APPROVED,
+        BorrowStatus.OVERDUE,
+        BorrowStatus.RETURN_PENDING
+    ]
+    return db.query(BorrowRecord).filter(
+        BorrowRecord.user_id == user_id,
+        BorrowRecord.status.in_(active_statuses)
+    ).count()
