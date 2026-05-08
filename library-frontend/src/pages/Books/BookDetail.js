@@ -5,6 +5,7 @@ import { useBorrow } from '../../hooks/useBorrow';
 import { formatDate } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
+import { borrowService } from '../../services/borrowService';
 import MdCard from '../../components/MdCard';
 
 const BookDetail = () => {
@@ -13,16 +14,27 @@ const BookDetail = () => {
   const { currentBook, loading, error, fetchBookById, deleteBook } = useBooks();
   const { borrowBook } = useBorrow();
   const [borrowLoading, setBorrowLoading] = useState(false);
+  const [reserveLoading, setReserveLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [requestedDueDate, setRequestedDueDate] = useState('');
 
   useEffect(() => {
     if (id) fetchBookById(parseInt(id));
   }, [id, fetchBookById]);
 
+  useEffect(() => {
+    const defaultDue = new Date();
+    defaultDue.setDate(defaultDue.getDate() + 14);
+    setRequestedDueDate(defaultDue.toISOString().slice(0, 10));
+  }, []);
+
   const handleBorrow = async () => {
     setBorrowLoading(true);
     try {
-      await borrowBook(currentBook.id);
+      const requestedDueDateIso = requestedDueDate
+        ? new Date(`${requestedDueDate}T23:59:59`).toISOString()
+        : null;
+      await borrowBook(currentBook.id, requestedDueDateIso);
       alert('Borrow request submitted. Please wait for librarian approval.');
       navigate('/borrow');
     } catch (err) {
@@ -40,6 +52,26 @@ const BookDetail = () => {
   };
 
   const handleEdit = () => navigate(`/books/${id}/edit`);
+
+  const handleReserve = async () => {
+    setReserveLoading(true);
+    try {
+      await borrowService.reserveRequest(currentBook.id);
+      alert('Reservation request submitted. Please wait for librarian approval.');
+      navigate('/borrow');
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message;
+      if (detail === 'Deposit required before reservation') {
+        if (window.confirm('You need to pay the deposit before reservation. Go to Deposit Center now?')) {
+          navigate('/deposit');
+          return;
+        }
+      }
+      alert(`Reservation failed: ${detail}`);
+    } finally {
+      setReserveLoading(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this book?')) return;
@@ -162,6 +194,29 @@ const BookDetail = () => {
             </p>
           </MdCard>
 
+          {currentBook.available_copies > 0 && (
+            <MdCard variant="outlined" style={{ padding: '20px' }}>
+              <h3 style={sectionTitleStyle}>Preferred Return Date</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input
+                  type="date"
+                  value={requestedDueDate}
+                  onChange={(e) => setRequestedDueDate(e.target.value)}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--md-sys-color-outline)',
+                    background: 'var(--md-sys-color-surface)',
+                    color: 'var(--md-sys-color-on-surface)',
+                  }}
+                />
+                <span style={{ fontSize: '0.85rem', color: 'var(--md-sys-color-outline)' }}>
+                  Default is 14 days if empty/invalid.
+                </span>
+              </div>
+            </MdCard>
+          )}
+
           {/* Action Footer - 右对齐处理 */}
           <div style={{
             display: 'flex',
@@ -186,6 +241,15 @@ const BookDetail = () => {
                 style={primaryBtnStyle}
               >
                 {borrowLoading ? 'Processing...' : 'Request to Borrow'}
+              </button>
+            )}
+            {currentBook.available_copies <= 0 && (
+              <button
+                onClick={handleReserve}
+                disabled={reserveLoading}
+                style={primaryBtnStyle}
+              >
+                {reserveLoading ? 'Processing...' : 'Request Reservation'}
               </button>
             )}
           </div>

@@ -13,6 +13,7 @@ import UserList from './pages/Users/UserList';
 import BorrowHistory from './pages/Borrow/BorrowHistory';
 import Logs from './pages/Admin/Logs';
 import RequestApproval from './pages/Admin/RequestApproval';
+import BorrowRecords from './pages/Admin/BorrowRecords';
 import DepositCenter from './pages/Deposit/DepositCenter';
 import NotFound from './pages/NotFound';
 import './styles/App.css';
@@ -47,6 +48,7 @@ function App() {
           <Route path="/deposit" element={<ProtectedRoute><DepositCenter /></ProtectedRoute>} />
           <Route path="/admin/logs" element={<ProtectedRoute requiredRole="admin"><Logs /></ProtectedRoute>} />
           <Route path="/admin/requests" element={<ProtectedRoute requiredRole="librarian"><RequestApproval /></ProtectedRoute>} />
+          <Route path="/admin/borrow-records" element={<ProtectedRoute requiredRole="librarian"><BorrowRecords /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

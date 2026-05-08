@@ -6,6 +6,7 @@ import { ROLES } from '../utils/constants';
 import { borrowService } from '../services/borrowService';
 import { bookService } from '../services/bookService';
 import { userService } from '../services/userService';
+import { depositService } from '../services/depositService';
 import { formatDate, getStatusText } from '../utils/helpers';
 
 // MWC Component Imports
@@ -21,8 +22,9 @@ const Dashboard = () => {
     availableCopies: 0,
     pendingRequests: 0,
     myBorrowed: 0,
-    myReturnPending: 0,
     activeUsers: 0,
+    depositStatus: 'unknown',
+    depositAmount: null,
   });
   const [recentRequests, setRecentRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,21 +45,29 @@ const Dashboard = () => {
       if (isLibrarianOrAdmin) {
         requests.push(borrowService.getPendingRequests());
         requests.push(userService.getUsers({ limit: 300 }));
+      } else {
+        requests.push(depositService.getMyDeposit());
       }
 
       const responses = await Promise.all(requests);
       const books = responses[0].data || [];
       const myHistory = responses[1].data || [];
+      const isRenewRequestRecord = (item) => (item?.librarian_notes || '').startsWith('__RENEW__:');
+      const realActiveLoans = myHistory.filter(
+        (item) => item.status === 'approved' && !isRenewRequestRecord(item)
+      );
       const pending = isLibrarianOrAdmin ? (responses[2].data || []) : [];
       const users = isLibrarianOrAdmin ? (responses[3].data || []) : [];
+      const deposit = !isLibrarianOrAdmin ? (responses[2].data || null) : null;
 
       setOverview({
         totalBooks: books.length,
         availableCopies: books.reduce((sum, item) => sum + (item.available_copies || 0), 0),
         pendingRequests: pending.length,
-        myBorrowed: myHistory.filter((item) => item.status === 'approved').length,
-        myReturnPending: myHistory.filter((item) => item.status === 'return_pending').length,
+        myBorrowed: realActiveLoans.length,
         activeUsers: users.filter((item) => item.is_active).length,
+        depositStatus: deposit?.status || 'unknown',
+        depositAmount: deposit?.amount ?? null,
       });
       setRecentRequests(pending.slice(0, 5));
     } catch (err) {
@@ -83,7 +93,11 @@ const Dashboard = () => {
       cards.push({ label: 'Pending Requests', value: overview.pendingRequests, icon: 'pending_actions' });
       cards.push({ label: 'Active Users', value: overview.activeUsers, icon: 'groups' });
     } else {
-      cards.push({ label: 'Returns Awaiting Approval', value: overview.myReturnPending, icon: 'assignment_turned_in' });
+      cards.push({
+        label: 'Deposit Status',
+        value: overview.depositStatus === 'paid' ? 'Paid' : 'Unpaid',
+        icon: 'account_balance_wallet',
+      });
     }
     return cards;
   }, [overview, isLibrarianOrAdmin]);
@@ -207,7 +221,20 @@ const Dashboard = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <InfoItem text={`You currently have ${overview.myBorrowed} active loan(s).`} />
-              <InfoItem text={`${overview.myReturnPending} return request(s) are awaiting librarian approval.`} />
+              <InfoItem
+                text={
+                  overview.depositStatus === 'paid'
+                    ? `Deposit paid (${overview.depositAmount ?? '-'}). Borrowing is enabled.`
+                    : `Deposit unpaid (${overview.depositAmount ?? '-'}). Please complete payment before borrowing.`
+                }
+                danger={overview.depositStatus !== 'paid'}
+              />
+              {overview.depositStatus !== 'paid' && (
+                <md-filled-button href="/deposit">
+                  <md-icon slot="icon">payments</md-icon>
+                  Pay Deposit Now
+                </md-filled-button>
+              )}
             </div>
           )}
         </MdCard>

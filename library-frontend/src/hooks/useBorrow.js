@@ -22,9 +22,9 @@ export const useBorrow = () => {
     }
   }, [dispatch]);
 
-  const borrowBook = useCallback(async (bookId) => {
+  const borrowBook = useCallback(async (bookId, requestedDueDate = null) => {
     try {
-      const response = await borrowService.borrowRequest(bookId);
+      const response = await borrowService.borrowRequest(bookId, requestedDueDate);
       dispatch(addBorrowRequest(response.data));
       return response.data;
     } catch (err) {

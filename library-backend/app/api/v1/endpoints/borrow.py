@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.borrow import (
-    BorrowRequestCreate, ReturnRequestCreate,
+    BorrowRequestCreate, ReserveRequestCreate, ReturnRequestCreate, RenewRequestCreate,
     RequestProcess, BorrowRecordPublic,
     BatchRequestProcess, BatchRequestProcessResponse,
     BatchReturnRequestCreate, BatchReturnRequestResponse
@@ -43,15 +43,42 @@ def request_return(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """用户请求还书"""
-    logger.info(f"📥 [还书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 请求还书 | 借记录 ID: {request_in.borrow_record_id}")
+    """用户直接还书（无需管理员审批）"""
+    logger.info(f"📥 [直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 提交还书 | 借记录 ID: {request_in.borrow_record_id}")
     
     record = crud_borrow.create_return_request(db, current_user.id, request_in.borrow_record_id)
     if not record:
-        logger.warning(f"❌ [还书请求失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}")
+        logger.warning(f"❌ [直接还书失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}")
         raise HTTPException(status_code=400, detail="Invalid borrow record or book not borrowed")
     
-    logger.info(f"✅ [还书请求成功] 用户 '{current_user.username}' 成功创建还书请求 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
+    logger.info(f"✅ [直接还书成功] 用户 '{current_user.username}' 已归还书籍 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
+    return record
+
+@router.post("/reserve-requests", response_model=BorrowRecordPublic)
+def request_reserve(
+    request_in: ReserveRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """用户请求预约书籍（无库存时）"""
+    if not crud_deposit.has_paid_deposit(db, current_user.id):
+        raise HTTPException(status_code=403, detail="Deposit required before reservation")
+
+    record = crud_borrow.create_reserve_request(db, current_user.id, request_in)
+    if not record:
+        raise HTTPException(status_code=400, detail="Reservation not available for this book")
+    return record
+
+@router.post("/renew-requests", response_model=BorrowRecordPublic)
+def request_renew(
+    request_in: RenewRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """用户请求续借"""
+    record = crud_borrow.create_renew_request(db, current_user.id, request_in)
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid renew request")
     return record
 
 @router.post("/return-requests/batch", response_model=BatchReturnRequestResponse)
@@ -60,12 +87,12 @@ def request_return_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """用户批量请求还书"""
+    """用户批量直接还书"""
     if not request_in.borrow_record_ids:
         raise HTTPException(status_code=400, detail="borrow_record_ids cannot be empty")
 
     logger.info(
-        f"📥 [批量还书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量还书 | "
+        f"📥 [批量直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量还书 | "
         f"数量: {len(request_in.borrow_record_ids)}"
     )
 
@@ -78,7 +105,7 @@ def request_return_batch(
             results.append({
                 "borrow_record_id": record_id,
                 "success": True,
-                "message": "Return request created",
+                "message": "Book returned",
                 "record": BorrowRecordPublic.model_validate(record).model_dump()
             })
         else:
@@ -92,7 +119,7 @@ def request_return_batch(
     total = len(request_in.borrow_record_ids)
     failure_count = total - success_count
     logger.info(
-        f"✅ [批量还书请求完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量还书提交完成 | "
+        f"✅ [批量直接还书完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量还书完成 | "
         f"总数: {total} | 成功: {success_count} | 失败: {failure_count}"
     )
     return {
@@ -135,13 +162,23 @@ def process_request(
     borrower_id = record.user_id
 
     if record.status.value == "pending":
-        record = crud_borrow.process_borrow_request(db, request_id, process_in)
-        if record:
-            action = "批准" if process_in.action == "approve" else "拒绝"
-            logger.info(
-                f"✅ [借书请求{action}] 图书管理员 '{current_user.username}' {action}了借书请求 | "
-                f"请求 ID: {request_id} | 用户: {borrower_username} (ID: {borrower_id}) | 书籍 ID: {book_id}"
-            )
+        is_reserve = crud_borrow.is_reserve_request(record)
+        if crud_borrow.is_renew_request(record):
+            record = crud_borrow.process_renew_request(db, request_id, process_in)
+            if record:
+                action = "批准" if process_in.action == "approve" else "拒绝"
+                logger.info(
+                    f"✅ [续借请求{action}] 图书管理员 '{current_user.username}' {action}了续借请求 | "
+                    f"请求 ID: {request_id} | 用户: {borrower_username} (ID: {borrower_id}) | 书籍 ID: {book_id}"
+                )
+        else:
+            record = crud_borrow.process_borrow_request(db, request_id, process_in)
+            if record:
+                action = "批准" if process_in.action == "approve" else "拒绝"
+                logger.info(
+                    f"✅ [借书/预约请求{action}] 图书管理员 '{current_user.username}' {action}了请求 | "
+                    f"请求 ID: {request_id} | 用户: {borrower_username} (ID: {borrower_id}) | 书籍 ID: {book_id}"
+                )
     elif record.status.value == "return_pending":
         record = crud_borrow.process_return_request(db, request_id, process_in)
         if record:
@@ -155,6 +192,8 @@ def process_request(
         raise HTTPException(status_code=400, detail="Request is not in pending state")
 
     if not record:
+        if process_in.action == "approve" and 'is_reserve' in locals() and is_reserve:
+            raise HTTPException(status_code=400, detail="No available copies now. Reservation remains pending.")
         logger.error(f"❌ [请求处理失败] 处理操作失败 | ID: {request_id}")
         raise HTTPException(status_code=400, detail="Processing failed")
     return record
@@ -193,7 +232,11 @@ def process_requests_batch(
                 continue
 
             if record.status.value == "pending":
-                processed = crud_borrow.process_borrow_request(db, request_id, process_payload)
+                is_reserve = crud_borrow.is_reserve_request(record)
+                if crud_borrow.is_renew_request(record):
+                    processed = crud_borrow.process_renew_request(db, request_id, process_payload)
+                else:
+                    processed = crud_borrow.process_borrow_request(db, request_id, process_payload)
             elif record.status.value == "return_pending":
                 processed = crud_borrow.process_return_request(db, request_id, process_payload)
             else:
@@ -206,10 +249,13 @@ def process_requests_batch(
                 continue
 
             if not processed:
+                fail_message = "Processing failed"
+                if process_in.action == "approve" and 'is_reserve' in locals() and is_reserve:
+                    fail_message = "No available copies now. Reservation remains pending."
                 results.append({
                     "request_id": request_id,
                     "success": False,
-                    "message": "Processing failed",
+                    "message": fail_message,
                     "record": None
                 })
                 continue
@@ -252,4 +298,16 @@ def get_my_history(
     logger.debug(f"📚 [借书历史] 用户 '{current_user.username}' 查询个人借书历史")
     records = crud_borrow.get_user_borrow_history(db, current_user.id)
     logger.debug(f"✅ [借书历史] 返回用户 '{current_user.username}' 的 {len(records)} 条借书记录")
+    return records
+
+
+@router.get("/borrow-records", response_model=List[BorrowRecordPublic])
+def get_all_borrow_records(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_librarian)
+):
+    """馆员查看全量借阅记录"""
+    logger.debug(f"📚 [借阅总览] 馆员 '{current_user.username}' 查询全量借阅记录")
+    records = crud_borrow.get_all_borrow_records(db)
+    logger.debug(f"✅ [借阅总览] 返回 {len(records)} 条借阅记录")
     return records

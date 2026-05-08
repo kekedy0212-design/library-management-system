@@ -108,6 +108,17 @@ def update_book(db: Session, db_book: Book, book_in: BookUpdate):
     
     for field, value in update_data.items():
         setattr(db_book, field, value)
+
+    auto_assigned_count = 0
+    if db_book.available_copies > old_available:
+        from app.crud import crud_borrow
+        auto_assigned_records = crud_borrow.assign_reservations_if_available(
+            db,
+            db_book,
+            reason="AUTO_ASSIGNED_AFTER_STOCK_UPDATE"
+        )
+        auto_assigned_count = len(auto_assigned_records)
+
     db.commit()
     db.refresh(db_book)
     
@@ -118,6 +129,8 @@ def update_book(db: Session, db_book: Book, book_in: BookUpdate):
     if "total_copies" in update_data:
         changes.append(f"总数: {old_total} → {db_book.total_copies}")
         changes.append(f"可用数: {old_available} → {db_book.available_copies}")
+    if auto_assigned_count > 0:
+        changes.append(f"自动分配预约: {auto_assigned_count} 条")
     
     if changes:
         logger.info(f"✅ [CRUD] 更新书籍成功 | 书籍 ID: {db_book.id} | 修改项: {' | '.join(changes)}")

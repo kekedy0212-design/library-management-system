@@ -59,6 +59,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     { label: 'Users', path: '/users', icon: 'group', visible: isLibrarian() || isAdmin() },
     { label: 'History', path: '/borrow', icon: 'history', visible: true },
     { label: 'Requests', path: '/admin/requests', icon: 'pending_actions', visible: isLibrarian() || isAdmin() },
+    { label: 'Borrow Records', path: '/admin/borrow-records', icon: 'receipt_long', visible: isLibrarian() || isAdmin() },
     { label: 'Logs', path: '/admin/logs', icon: 'settings_ethernet', visible: isAdmin() },
   ];
 

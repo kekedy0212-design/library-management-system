@@ -17,6 +17,13 @@ def get_user_deposit(db: Session, user_id: int) -> Deposit | None:
 def get_or_create_user_deposit(db: Session, user_id: int, amount: Decimal) -> Deposit:
     deposit = get_user_deposit(db, user_id)
     if deposit:
+        # Keep already-paid deposits as historical records.
+        # For unpaid deposits, sync with current configured amount.
+        if deposit.status == DepositStatus.UNPAID and Decimal(str(deposit.amount)) != amount:
+            deposit.amount = amount
+            db.add(deposit)
+            db.commit()
+            db.refresh(deposit)
         return deposit
 
     deposit = Deposit(user_id=user_id, amount=amount, status=DepositStatus.UNPAID)

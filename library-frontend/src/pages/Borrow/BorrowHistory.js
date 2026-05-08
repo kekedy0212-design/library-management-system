@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { fetchBorrowHistoryStart, fetchBorrowHistorySuccess, fetchBorrowHistoryFailure } from '../../store/slices/borrowSlice';
@@ -15,6 +15,16 @@ const BorrowHistory = () => {
   const [returnLoading, setReturnLoading] = useState(null);
   const [batchReturning, setBatchReturning] = useState(false);
   const [selectedReturnIds, setSelectedReturnIds] = useState([]);
+  const [renewLoading, setRenewLoading] = useState(null);
+
+  const isRenewRequestRecord = useCallback(
+    (record) => (record?.librarian_notes || '').startsWith('__RENEW__:'),
+    []
+  );
+  const visibleHistory = useMemo(
+    () => borrowHistory.filter(record => !isRenewRequestRecord(record)),
+    [borrowHistory, isRenewRequestRecord]
+  );
 
   const fetchHistory = useCallback(async () => {
     dispatch(fetchBorrowHistoryStart());
@@ -32,12 +42,18 @@ const BorrowHistory = () => {
 
   useEffect(() => {
     const eligibleIds = new Set(
-      borrowHistory
+      visibleHistory
         .filter(record => record.status === 'approved')
         .map(record => record.id)
     );
-    setSelectedReturnIds(prev => prev.filter(id => eligibleIds.has(id)));
-  }, [borrowHistory]);
+    setSelectedReturnIds(prev => {
+      const next = prev.filter(id => eligibleIds.has(id));
+      if (next.length === prev.length && next.every((id, idx) => id === prev[idx])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [visibleHistory]);
 
   const handleReturn = async (recordId) => {
     if (!window.confirm('Are you sure you want to request to return this book?')) {
@@ -47,7 +63,7 @@ const BorrowHistory = () => {
     setReturnLoading(recordId);
     try {
       await borrowService.returnRequest(recordId);
-      alert('Return request submitted. Please wait for librarian approval.');
+      alert('Book returned successfully.');
       await fetchHistory();
     } catch (err) {
       alert(`Return failed: ${err.response?.data?.detail || err.message}`);
@@ -56,7 +72,7 @@ const BorrowHistory = () => {
     }
   };
 
-  const returnableRecords = borrowHistory.filter(record => record.status === 'approved');
+  const returnableRecords = visibleHistory.filter(record => record.status === 'approved');
   const allReturnableSelected =
     returnableRecords.length > 0 && selectedReturnIds.length === returnableRecords.length;
 
@@ -87,13 +103,55 @@ const BorrowHistory = () => {
     try {
       const response = await borrowService.returnRequestBatch(selectedReturnIds);
       const { success_count, failure_count } = response.data;
-      alert(`Batch return submitted. Success: ${success_count}, Failed: ${failure_count}`);
+      alert(`Batch return completed. Success: ${success_count}, Failed: ${failure_count}`);
       setSelectedReturnIds([]);
       await fetchHistory();
     } catch (err) {
       alert(`Batch return failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setBatchReturning(false);
+    }
+  };
+
+  const handleRenew = async (recordId) => {
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 14);
+    const defaultText = defaultDate.toISOString().slice(0, 10);
+    const input = window.prompt('Enter your preferred return date (YYYY-MM-DD):', defaultText);
+    if (input === null) {
+      return;
+    }
+
+    const trimmed = input.trim();
+    let requestedDueDateIso = null;
+    if (trimmed) {
+      const parsed = new Date(`${trimmed}T23:59:59`);
+      if (Number.isNaN(parsed.getTime())) {
+        alert('Invalid date format. Please use YYYY-MM-DD.');
+        return;
+      }
+      const currentDueDate = recordId
+        ? new Date((visibleHistory.find(item => item.id === recordId)?.due_date) || 0)
+        : null;
+      if (currentDueDate && currentDueDate.getTime() > 0 && parsed <= currentDueDate) {
+        alert('Preferred renew date must be later than current due date.');
+        return;
+      }
+      requestedDueDateIso = parsed.toISOString();
+    }
+
+    if (!window.confirm('Submit a renew request for this book?')) {
+      return;
+    }
+    setRenewLoading(recordId);
+    try {
+      await borrowService.renewRequest(recordId, requestedDueDateIso);
+      alert('Renew request submitted. Please wait for librarian approval.');
+      await fetchHistory();
+    } catch (err) {
+      alert(`Renew failed: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setRenewLoading(null);
     }
   };
 
@@ -142,6 +200,17 @@ const BorrowHistory = () => {
         )}
       </header>
 
+      <div
+        style={{
+          marginBottom: '12px',
+          color: 'var(--md-sys-color-error)',
+          fontSize: '0.9rem',
+          fontWeight: '600',
+        }}
+      >
+        Red highlight means this book is due within 3 days.
+      </div>
+
       <MdCard variant="outlined">
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -156,7 +225,7 @@ const BorrowHistory = () => {
               </tr>
             </thead>
             <tbody>
-              {borrowHistory.map(record => (
+              {visibleHistory.map(record => (
                 <tr key={record.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)', transition: 'background 0.2s' }}>
                   <td style={tableCellStyle}>
                     <input
@@ -174,23 +243,47 @@ const BorrowHistory = () => {
                   <td style={tableCellStyle}>{formatDate(record.request_date)}</td>
                   <td style={tableCellStyle}>
                     {record.due_date ? (
-                      <span style={{ color: isOverdue(record.due_date) ? 'var(--md-sys-color-error)' : 'inherit' }}>
+                      <span style={{ color: shouldHighlightDueDate(record) ? 'var(--md-sys-color-error)' : 'inherit' }}>
                         {formatDate(record.due_date)}
                       </span>
                     ) : '-'}
                   </td>
                   <td style={tableCellStyle}>
-                    <StatusBadge status={record.status} />
+                    <StatusBadge status={record.status} notes={record.librarian_notes} />
+                    {isAutoAssignedReservation(record) && (
+                      <div style={{
+                        marginTop: '6px',
+                        display: 'inline-block',
+                        backgroundColor: '#e8f5e9',
+                        color: '#1b5e20',
+                        border: '1px solid #a5d6a7',
+                        borderRadius: '10px',
+                        padding: '2px 8px',
+                        fontSize: '0.7rem',
+                        fontWeight: '600',
+                      }}>
+                        Auto assigned from reservation
+                      </div>
+                    )}
                   </td>
                   <td style={{ ...tableCellStyle, textAlign: 'right' }}>
                     {record.status === 'approved' && (
-                      <button
-                        onClick={() => handleReturn(record.id)}
-                        disabled={returnLoading === record.id || batchReturning}
-                        style={actionButtonStyle}
-                      >
-                        {returnLoading === record.id ? 'Processing...' : 'Return Book'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => handleRenew(record.id)}
+                          disabled={renewLoading === record.id || returnLoading === record.id || batchReturning}
+                          style={actionButtonStyle}
+                        >
+                          {renewLoading === record.id ? 'Processing...' : 'Renew'}
+                        </button>
+                        <button
+                          onClick={() => handleReturn(record.id)}
+                          disabled={returnLoading === record.id || renewLoading === record.id || batchReturning}
+                          style={actionButtonStyle}
+                        >
+                          {returnLoading === record.id ? 'Processing...' : 'Return Book'}
+                        </button>
+                      </div>
                     )}
                     {hasPermission(ROLES.LIBRARIAN) && record.status === 'pending' && (
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -204,7 +297,7 @@ const BorrowHistory = () => {
             </tbody>
           </table>
 
-          {borrowHistory.length === 0 && (
+          {visibleHistory.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px', color: 'var(--md-sys-color-on-surface-variant)' }}>
               No borrowing history found.
             </div>
@@ -242,7 +335,7 @@ const actionButtonStyle = {
   cursor: 'pointer',
 };
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, notes = '' }) => {
   // MD3 Color Mapping for Statuses
   const colors = {
     pending: { bg: '#fff7e6', text: '#b26b00', label: 'Pending' },
@@ -252,6 +345,9 @@ const StatusBadge = ({ status }) => {
   };
 
   const config = colors[status] || { bg: '#eee', text: '#333', label: status };
+  if (status === 'pending' && (notes || '').startsWith('__RESERVE__')) {
+    config.label = 'Reservation Pending';
+  }
 
   return (
     <span style={{
@@ -268,9 +364,23 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const isOverdue = (dateString) => {
+const isAutoAssignedReservation = (record) => {
+  const notes = record?.librarian_notes || '';
+  return notes.startsWith('__RESERVE__|AUTO_ASSIGNED');
+};
+
+const isDueWithinThreeDays = (dateString) => {
   if (!dateString) return false;
-  return new Date(dateString) < new Date();
+  const now = new Date();
+  const threeDaysLater = new Date(now);
+  threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+  const due = new Date(dateString);
+  return due >= now && due <= threeDaysLater;
+};
+
+const shouldHighlightDueDate = (record) => {
+  if (!record || record.status !== 'approved') return false;
+  return isDueWithinThreeDays(record.due_date);
 };
 
 export default BorrowHistory;

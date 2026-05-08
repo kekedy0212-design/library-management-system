@@ -46,7 +46,12 @@ const RequestApproval = () => {
     try {
       const response = await borrowService.processRequest(requestId, action, notes);
       dispatch(updateBorrowRequest(response.data));
-      alert(`Request ${actionLabel}d successfully`);
+      const finalStatus = response.data?.status;
+      if (action === 'approve' && finalStatus !== 'approved' && finalStatus !== 'returned') {
+        alert(`Request handled but final status is "${finalStatus}".`);
+      } else {
+        alert(`Request ${actionLabel}d successfully`);
+      }
       setNotes('');
       await fetchPendingRequests();
     } catch (err) {
@@ -116,7 +121,7 @@ const RequestApproval = () => {
       <header style={{ marginBottom: '32px' }}>
         <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: '0 0 8px 0' }}>Pending Approvals</h2>
         <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>
-          Review and process book loan or return requests from library members.
+          Review and process borrow, return, reservation, and renew requests.
         </p>
         <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
           <button
@@ -181,6 +186,7 @@ const RequestApproval = () => {
                 <th style={thStyle}>Book Title</th>
                 <th style={thStyle}>Member</th>
                 <th style={thStyle}>Request Date</th>
+                <th style={thStyle}>Requested Due Date</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>Action</th>
               </tr>
             </thead>
@@ -197,7 +203,7 @@ const RequestApproval = () => {
                     />
                   </td>
                   <td style={tdStyle}>
-                    <TypeBadge status={request.status} />
+                    <TypeBadge status={request.status} notes={request.librarian_notes} />
                   </td>
                   <td style={tdStyle}>
                     <div style={{ fontWeight: '500' }}>{request.book?.title}</div>
@@ -205,6 +211,9 @@ const RequestApproval = () => {
                   </td>
                   <td style={tdStyle}>{request.user?.username}</td>
                   <td style={tdStyle}>{formatDate(request.request_date)}</td>
+                  <td style={tdStyle}>
+                    {request.due_date ? formatDate(request.due_date) : '-'}
+                  </td>
                   <td style={{ ...tdStyle, textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                       <button
@@ -267,18 +276,26 @@ const rejectBtnStyle = {
   fontSize: '0.875rem'
 };
 
-const TypeBadge = ({ status }) => {
-  const isBorrow = status === 'pending';
+const getRequestType = (status, notes = '') => {
+  if ((notes || '').startsWith('__RENEW__:')) return 'RENEW';
+  if ((notes || '').startsWith('__RESERVE__')) return 'RESERVE';
+  if (status === 'return_pending') return 'RETURN';
+  return 'BORROW';
+};
+
+const TypeBadge = ({ status, notes }) => {
+  const type = getRequestType(status, notes);
+  const isBorrowLike = type === 'BORROW' || type === 'RESERVE' || type === 'RENEW';
   return (
     <span style={{
       padding: '4px 12px',
       borderRadius: '8px',
       fontSize: '0.75rem',
       fontWeight: '600',
-      backgroundColor: isBorrow ? 'var(--md-sys-color-secondary-container)' : 'var(--md-sys-color-tertiary-container)',
-      color: isBorrow ? 'var(--md-sys-color-on-secondary-container)' : 'var(--md-sys-color-on-tertiary-container)',
+      backgroundColor: isBorrowLike ? 'var(--md-sys-color-secondary-container)' : 'var(--md-sys-color-tertiary-container)',
+      color: isBorrowLike ? 'var(--md-sys-color-on-secondary-container)' : 'var(--md-sys-color-on-tertiary-container)',
     }}>
-      {isBorrow ? 'BORROW' : 'RETURN'}
+      {type}
     </span>
   );
 };

@@ -6,9 +6,17 @@ from app.schemas.book import BookPublic
 
 class BorrowRequestCreate(BaseModel):
     book_id: int
+    requested_due_date: datetime | None = None
+
+class ReserveRequestCreate(BaseModel):
+    book_id: int
 
 class ReturnRequestCreate(BaseModel):
     borrow_record_id: int
+
+class RenewRequestCreate(BaseModel):
+    borrow_record_id: int
+    requested_due_date: datetime | None = None
 
 class BatchReturnRequestCreate(BaseModel):
     borrow_record_ids: list[int]
