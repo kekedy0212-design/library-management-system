@@ -156,6 +156,12 @@ const Dashboard = () => {
               <md-icon slot="icon">auto_stories</md-icon>
               My Borrowing History
             </md-outlined-button>
+            {!isLibrarianOrAdmin && (
+              <md-outlined-button href="/deposit">
+                <md-icon slot="icon">account_balance_wallet</md-icon>
+                Deposit Center
+              </md-outlined-button>
+            )}
             {isLibrarianOrAdmin && (
               <md-outlined-button href="/admin/requests">
                 <md-icon slot="icon">rule</md-icon>

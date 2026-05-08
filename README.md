@@ -70,3 +70,39 @@
 | **读者 (Reader)** | 账号注册、图书搜索、支付押金、借还申请、续借预约、接收通知、缴纳罚金、评分评论。 |
 | **图书管理员 (Librarian)** | 书籍库存管理、读者账户管理、审批借还/预约、维护借阅记录、审核罚款、管理评论。 |
 | **系统管理员 (Admin)** | 设定系统规则/约束、确保数据一致性、自动化罚款策略生成、权限管控、系统监控。 |
+
+## 💳 押金与支付宝沙盒（已接入基础版）
+
+当前系统已实现基础押金流程：
+- 读者在 `Deposit` 页面发起押金支付
+- 后端创建支付宝沙盒订单
+- 通过支付宝异步回调更新押金状态
+- 未支付押金的读者无法提交借书请求
+
+### 后端新增环境变量（`library-backend/.env`）
+
+```env
+DEPOSIT_AMOUNT=0.01
+
+ALIPAY_APP_ID=你的沙盒APP_ID
+ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
+ALIPAY_NOTIFY_URL=http://你的公网地址/api/v1/payments/alipay/notify
+ALIPAY_RETURN_URL=http://localhost:3000/deposit
+ALIPAY_APP_PRIVATE_KEY=你的应用私钥(可用\\n换行)
+ALIPAY_PUBLIC_KEY=支付宝公钥(可用\\n换行)
+ALIPAY_DEBUG=true
+```
+
+### 依赖安装
+
+支付宝 Python SDK 需要单独安装：
+
+```bash
+pip install python-alipay-sdk
+```
+
+### 支付宝沙箱测试账号（买家）
+
+- Buyer account: `qllupv3003@sandbox.com`
+- Login password: `111111`
+- Payment password: `111111`

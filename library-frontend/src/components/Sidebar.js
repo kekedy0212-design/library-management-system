@@ -55,6 +55,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   const navItems = [
     { label: 'Dashboard', path: '/', icon: 'dashboard', visible: true },
     { label: 'Books', path: '/books', icon: 'library_books', visible: true },
+    { label: 'Deposit', path: '/deposit', icon: 'account_balance_wallet', visible: true },
     { label: 'Users', path: '/users', icon: 'group', visible: isLibrarian() || isAdmin() },
     { label: 'History', path: '/borrow', icon: 'history', visible: true },
     { label: 'Requests', path: '/admin/requests', icon: 'pending_actions', visible: isLibrarian() || isAdmin() },

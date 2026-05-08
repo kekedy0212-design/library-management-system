@@ -9,6 +9,7 @@ from app.schemas.borrow import (
     BatchReturnRequestCreate, BatchReturnRequestResponse
 )
 from app.crud import crud_borrow
+from app.crud import crud_deposit
 from app.api.deps import get_current_active_user, get_current_librarian
 from app.models.user import User
 import logging
@@ -23,6 +24,9 @@ def request_borrow(
     current_user: User = Depends(get_current_active_user)
 ):
     """用户请求借书"""
+    if not crud_deposit.has_paid_deposit(db, current_user.id):
+        raise HTTPException(status_code=403, detail="Deposit required before borrowing")
+
     logger.info(f"📤 [借书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 请求借书 | 书籍 ID: {request_in.book_id}")
     
     record = crud_borrow.create_borrow_request(db, current_user.id, request_in)

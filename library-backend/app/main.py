@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import engine, Base, SessionLocal
 from app.core.logger import setup_logging, get_logger, log_separator
@@ -11,6 +11,7 @@ import time
 from app.models.user import User, UserRole
 from app.models.book import Book
 from app.models.borrow import BorrowRecord
+from app.models.deposit import Deposit, DepositTransaction
 
 # 初始化日志 - 支持通过环境变量调整日志级别 (DEBUG, INFO, WARNING, ERROR)
 log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -129,7 +130,7 @@ async def log_requests(request: Request, call_next):
         raise
 
 # 注册路由
-from app.api.v1.endpoints import auth, users, books, borrow, admin
+from app.api.v1.endpoints import auth, users, books, borrow, admin, deposit
 
 logger.info("📡 [路由] 开始注册API路由...")
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
@@ -137,6 +138,7 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(books.router, prefix="/api/v1/books", tags=["Books"])
 app.include_router(borrow.router, prefix="/api/v1", tags=["Borrow/Return"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(deposit.router, prefix="/api/v1", tags=["Deposit/Payment"])
 logger.info("✅ [路由] API路由注册完成")
 
 @app.get("/")

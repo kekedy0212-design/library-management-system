@@ -26,7 +26,14 @@ const BookDetail = () => {
       alert('Borrow request submitted. Please wait for librarian approval.');
       navigate('/borrow');
     } catch (err) {
-      alert(`Borrowing failed: ${err.response?.data?.detail || err.message}`);
+      const detail = err.response?.data?.detail || err.message;
+      if (detail === 'Deposit required before borrowing') {
+        if (window.confirm('You need to pay the deposit before borrowing. Go to Deposit Center now?')) {
+          navigate('/deposit');
+          return;
+        }
+      }
+      alert(`Borrowing failed: ${detail}`);
     } finally {
       setBorrowLoading(false);
     }
