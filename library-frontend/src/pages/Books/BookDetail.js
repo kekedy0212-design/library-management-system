@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useBooks } from '../../hooks/useBooks';
 import { useBorrow } from '../../hooks/useBorrow';
@@ -7,6 +7,7 @@ import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import { borrowService } from '../../services/borrowService';
 import MdCard from '../../components/MdCard';
+import JsBarcode from 'jsbarcode';
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -17,6 +18,21 @@ const BookDetail = () => {
   const [reserveLoading, setReserveLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [requestedDueDate, setRequestedDueDate] = useState('');
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [barcodeSettings, setBarcodeSettings] = useState({
+    copyRange: '',
+    itemsPerRow: 2,
+    itemGap: 24,
+    height: 100,
+    fontSize: 18,
+    textMargin: 15,
+    width: 2 // 条码线条宽度
+  });
+
+  const handleSettingChange = (key, value) => {
+    setBarcodeSettings(prev => ({ ...prev, [key]: value }));
+  };
 
   useEffect(() => {
     if (id) fetchBookById(parseInt(id));
@@ -101,6 +117,71 @@ const BookDetail = () => {
     marginTop: '0'
   };
 
+  // 解析打印范围的逻辑
+  const parseRange = (rangeStr, max) => {
+    if (!rangeStr.trim()) return Array.from({ length: max }, (_, i) => i + 1);
+    const parts = rangeStr.split(',');
+    const result = new Set();
+    parts.forEach(part => {
+      if (part.includes('-')) {
+        const [start, end] = part.split('-').map(Number);
+        for (let i = start; i <= Math.min(end, max); i++) result.add(i);
+      } else {
+        const val = Number(part.trim());
+        if (val > 0 && val <= max) result.add(val);
+      }
+    });
+    return result.size > 0 ? Array.from(result).sort((a, b) => a - b) : [1];
+  };
+
+  const handlePrint = () => {
+    const { copyRange, itemsPerRow, itemGap, height, fontSize, textMargin, width } = barcodeSettings;
+    const selectedCopies = parseRange(copyRange, currentBook.total_copies);
+    const printWindow = window.open('', '_blank');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Barcodes - ${currentBook.title}</title>
+          <style>
+            body { margin: 0; padding: 20px; font-family: sans-serif; }
+            .grid { 
+              display: grid; 
+              grid-template-columns: repeat(${itemsPerRow}, 1fr); 
+              gap: ${itemGap}px; 
+            }
+            .item { 
+              display: flex; flex-direction: column; align-items: center; 
+              padding: 10px; border: 1px dashed #ccc;
+            }
+            @media print { .item { border: 1px solid #eee; page-break-inside: avoid; } }
+          </style>
+        </head>
+        <body><div class="grid" id="g"></div></body>
+      </html>
+    `);
+
+    const grid = printWindow.document.getElementById('g');
+    selectedCopies.forEach(num => {
+      const container = printWindow.document.createElement('div');
+      container.className = 'item';
+      const svg = printWindow.document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      container.appendChild(svg);
+      grid.appendChild(container);
+
+      JsBarcode(svg, `${currentBook.isbn}/${num}`, {
+        format: "CODE128",
+        width, height, fontSize, textMargin,
+        displayValue: true,
+        fontOptions: "bold"
+      });
+    });
+
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    setIsModalOpen(false);
+  };
+
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
       {/* Header Area */}
@@ -130,9 +211,9 @@ const BookDetail = () => {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '350px 1fr', // 左侧固定宽度，右侧自适应
+        gridTemplateColumns: '350px 1fr',
         gap: '32px',
-        alignItems: 'start'
+        alignItems: 'stretch' // 确保左右列高度相等
       }}>
 
         {/* Left Column: Status & Metadata */}
@@ -163,34 +244,135 @@ const BookDetail = () => {
           </MdCard>
 
           {/* Identifiers Card */}
-          <MdCard variant="outlined" style={{ padding: '24px', backgroundColor: 'var(--md-sys-color-surface-container-low)' }}>
+          <MdCard variant="outlined" style={cardContainerStyle}>
+            {/* 1. 标题 */}
             <h3 style={sectionTitleStyle}>Identifiers</h3>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', color: 'var(--md-sys-color-outline)' }}>ISBN</span>
+
+            {/* 2. ISBN 信息 */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <span style={{ color: 'var(--md-sys-color-outline)', fontSize: '0.9rem' }}>ISBN</span>
               <span style={{
-                fontFamily: 'monospace',
                 fontWeight: '600',
-                fontSize: '1rem',
-                letterSpacing: '0.5px'
+                fontFamily: 'monospace',
+                fontSize: '1.1rem',
+                color: 'var(--md-sys-color-on-surface)'
               }}>
                 {currentBook.isbn}
               </span>
             </div>
+            {hasPermission(ROLES.LIBRARIAN) && (
+              <>
+                {/* 3. 自动占位符（可选） */}
+                {/* 如果你想让按钮始终贴在卡片底部，取消下面这个 div 的注释 */}
+                {<div style={{ flex: 1 }}></div>}
+
+                {/* 4. 按钮 - 现在它紧跟在 ISBN 后面 */}
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  style={updatedFabStyle}
+                  onMouseOver={(e) => e.currentTarget.style.boxShadow = 'var(--md-sys-elevation-level4)'}
+                  onMouseOut={(e) => e.currentTarget.style.boxShadow = 'var(--md-sys-elevation-level3)'}
+                >
+                  <md-icon style={{ fontSize: '24px' }}>barcode</md-icon>
+                  <span style={{ fontWeight: '500', marginLeft: '8px' }}>Generate Barcodes</span>
+                </button>              </>
+            )}
           </MdCard>
         </div>
 
+        {/* 对话框 */}
+        {isModalOpen && (
+          <div style={modalOverlayStyle}>
+            <div style={modalContentStyle}>
+              <h2 style={{ margin: '0 0 24px 0', fontSize: '1.5rem', fontWeight: '400' }}>Barcode Print Settings</h2>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Copy Range</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="e.g. 1-3, 5, 7-10 (Leave empty for all)"
+                    value={barcodeSettings.copyRange}
+                    onChange={(e) => handleSettingChange('copyRange', e.target.value)}
+                  />
+                </div>
+
+                <div style={rowStyle}>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Items Per Row</label>
+                    <input type="number" style={inputStyle} placeholder="Default: 2"
+                      value={barcodeSettings.itemsPerRow} onChange={(e) => handleSettingChange('itemsPerRow', e.target.value)} />
+                  </div>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Gap (px)</label>
+                    <input type="number" style={inputStyle} placeholder="e.g. 24"
+                      value={barcodeSettings.itemGap} onChange={(e) => handleSettingChange('itemGap', e.target.value)} />
+                  </div>
+                </div>
+
+                <div style={rowStyle}>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Bar Height (px)</label>
+                    <input type="number" style={inputStyle} placeholder="Default: 100"
+                      value={barcodeSettings.height} onChange={(e) => handleSettingChange('height', e.target.value)} />
+                  </div>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Bar Width</label>
+                    <input type="number" step="0.5" style={inputStyle} placeholder="1.0 - 3.0"
+                      value={barcodeSettings.width} onChange={(e) => handleSettingChange('width', e.target.value)} />
+                  </div>
+                </div>
+
+                <div style={rowStyle}>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Font Size (pt)</label>
+                    <input type="number" style={inputStyle} placeholder="e.g. 18"
+                      value={barcodeSettings.fontSize} onChange={(e) => handleSettingChange('fontSize', e.target.value)} />
+                  </div>
+                  <div style={flexField}>
+                    <label style={labelStyle}>Text Margin (px)</label>
+                    <input type="number" style={inputStyle} placeholder="Spacing to text"
+                      value={barcodeSettings.textMargin} onChange={(e) => handleSettingChange('textMargin', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={actionAreaStyle}>
+                <button onClick={() => setIsModalOpen(false)} style={textBtnStyle}>Cancel</button>
+                <button onClick={handlePrint} style={filledBtnStyle}>Confirm & Print</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Right Column: Description & Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <MdCard variant="filled" style={{ padding: '32px', minHeight: '300px' }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          height: '100%', // 确保子元素可以参考高度
+        }}>
+          {/* Description Card */}
+          <MdCard variant="filled" style={{
+            padding: '32px',
+            flex: 1,            // 让卡片占据右侧列的所有剩余高度
+            display: 'flex',    // 【新增】必须设为 flex，内部的 p 标签 flex: 1 才会生效
+            flexDirection: 'column'
+          }}>
             <h3 style={sectionTitleStyle}>Description</h3>
             <p style={{
               lineHeight: '1.8',
               fontSize: '1.05rem',
               margin: 0,
               color: 'var(--md-sys-color-on-surface-variant)',
-              whiteSpace: 'pre-line', minHeight: '200px'
+              whiteSpace: 'pre-line',
+              flex: 1,          // 这里的 flex: 1 会把底部的空间填满
             }}>
-              {currentBook.description || "No description provided for this book."}
+              {currentBook.description || "No description provided."}
             </p>
           </MdCard>
 
@@ -330,6 +512,142 @@ const dangerBtnStyle = {
   borderRadius: '100px',
   fontWeight: '500',
   cursor: 'pointer'
+};
+
+const fabStyle = {
+  position: 'absolute',
+  right: '16px',
+  bottom: '16px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '0px',
+  height: '50px',
+  padding: '0 15px',
+  backgroundColor: 'var(--md-sys-color-secondary-container)',
+  color: 'var(--md-sys-color-on-secondary-container)',
+  border: 'none',
+  borderRadius: '10px',
+  cursor: 'pointer',
+  boxShadow: 'var(--md-sys-elevation-level3)',
+  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+  zIndex: 2, // 确保在卡片内容之上
+
+};
+const cardContainerStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '24px',
+  boxSizing: 'border-box',
+};
+
+const updatedFabStyle = {
+  ...fabStyle,
+  position: 'relative', // 改为相对定位或默认 static
+  right: 'auto',        // 清除之前的绝对定位属性
+  bottom: 'auto',
+  alignSelf: 'flex-end', // 关键：让按钮在 Flex 容器中靠右对齐
+  marginTop: '5px',     // 与上方 ISBN 信息保持间距
+};
+
+const modalOverlayStyle = {
+  position: 'fixed',
+  top: 0, left: 0, right: 0, bottom: 0,
+  backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  display: 'flex',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 2000
+};
+
+const modalContentStyle = {
+  backgroundColor: 'var(--md-sys-color-surface-container-high)',
+  padding: '24px',
+  borderRadius: '28px',
+  width: '100%',
+  maxWidth: '520px', // 稍微加宽，配合更窄的输入框以消除滚动条
+  boxShadow: 'var(--md-sys-elevation-level3)',
+  overflow: 'hidden' // 确保不出现滚动条
+};
+
+const scrollAreaStyle = {
+  overflowY: 'auto', // 内部内容过多时可滚动
+  paddingRight: '8px',
+  flex: 1
+};
+
+const rowStyle = {
+  display: 'flex',
+  gap: '16px',
+  marginBottom: '16px'
+};
+
+const fieldStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  marginBottom: '16px'
+};
+
+const flexField = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px'
+};
+
+const labelStyle = {
+  fontSize: '0.75rem',
+  fontWeight: '500',
+  color: 'var(--md-sys-color-on-surface-variant)',
+  marginLeft: '4px'
+};
+
+const inputStyle = {
+  padding: '15px 12px',
+  borderRadius: '8px',
+  border: '1px solid var(--md-sys-color-outline)',
+  backgroundColor: 'transparent',
+  fontSize: '0.9rem',
+  color: 'var(--md-sys-color-on-surface)',
+  width: '100%',
+  boxSizing: 'border-box'
+};
+
+const actionAreaStyle = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: '8px',
+  marginTop: '24px',
+  paddingTop: '16px',
+  borderTop: '1px solid var(--md-sys-color-outline-variant)'
+};
+
+const textBtnStyle = {
+  padding: '10px 20px',
+  background: 'none',
+  border: 'none',
+  color: 'var(--md-sys-color-primary)',
+  fontWeight: '600',
+  cursor: 'pointer'
+};
+
+const filledBtnStyle = {
+  padding: '10px 24px',
+  backgroundColor: 'var(--md-sys-color-primary)',
+  color: 'white',
+  border: 'none',
+  borderRadius: '100px',
+  fontWeight: '600',
+  cursor: 'pointer'
+};
+
+const sectionTitleStyle = {
+  fontSize: '0.875rem',
+  fontWeight: '600',
+  color: 'var(--md-sys-color-primary)',
+  textTransform: 'uppercase',
+  marginBottom: '16px'
 };
 
 export default BookDetail;

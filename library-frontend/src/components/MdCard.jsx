@@ -1,6 +1,6 @@
 import React from 'react';
 
-const MdCard = ({ children, variant = 'elevated', className = '' }) => {
+const MdCard = ({ children, variant = 'elevated', className = '', style = {} }) => {
     // MD3 三种主要的卡片样式
     const styles = {
         elevated: {
@@ -22,7 +22,8 @@ const MdCard = ({ children, variant = 'elevated', className = '' }) => {
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
-        ...styles[variant]
+        ...styles[variant],
+        ...style // 【关键】将外部传入的 style 合并进来，并放在最后以确保覆盖默认值
     };
 
     return (

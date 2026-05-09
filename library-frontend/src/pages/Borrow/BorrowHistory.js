@@ -7,6 +7,7 @@ import { formatDate, getStatusText, getStatusColor } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import MdCard from '../../components/MdCard';
+import ReturnScannerDialog from '../../components/ReturnScannerDialog';
 
 const BorrowHistory = () => {
   const dispatch = useDispatch();
@@ -16,6 +17,7 @@ const BorrowHistory = () => {
   const [batchReturning, setBatchReturning] = useState(false);
   const [selectedReturnIds, setSelectedReturnIds] = useState([]);
   const [renewLoading, setRenewLoading] = useState(null);
+  const [returnScannerOpen, setReturnScannerOpen] = useState(false);
 
   const isRenewRequestRecord = useCallback(
     (record) => (record?.librarian_notes || '').startsWith('__RENEW__:'),
@@ -179,6 +181,12 @@ const BorrowHistory = () => {
             >
               {allReturnableSelected ? 'Clear Selection' : 'Select All Returnable'}
             </button>
+            <button
+              onClick={() => setReturnScannerOpen(true)}
+              style={actionButtonStyle}
+            >
+              Scan Return
+            </button>
           </div>
         </div>
 
@@ -304,6 +312,14 @@ const BorrowHistory = () => {
           )}
         </div>
       </MdCard>
+      <ReturnScannerDialog
+        open={returnScannerOpen}
+        onClose={() =>
+          setReturnScannerOpen(false)
+        }
+        borrowHistory={borrowHistory}
+        onSuccess={fetchHistory}
+      />
     </div>
   );
 };
