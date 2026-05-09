@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import engine, Base, SessionLocal
+from app.core.config import settings as app_settings
 from app.core.logger import setup_logging, get_logger, log_separator
 from app.core.security import get_password_hash  # 添加这行导入
 import logging
@@ -62,17 +63,23 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 配置
+# CORS：默认允许常见本地端口；可用环境变量 CORS_ORIGINS 追加（逗号分隔）
+_default_cors = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+_extra = [o.strip() for o in app_settings.CORS_ORIGINS.split(",") if o.strip()]
+_cors_origins = list(dict.fromkeys(_default_cors + _extra))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=_cors_origins,
+    # 换电脑后前端端口可能变化；匹配本机任意端口的 HTTP 来源
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -49,18 +49,37 @@ def create_deposit_order(
     if deposit.status == DepositStatus.PAID:
         raise HTTPException(status_code=400, detail="Deposit already paid")
 
-    alipay = get_alipay_client()
+    try:
+        alipay = get_alipay_client()
+    except RuntimeError as exc:
+        logger.error(f"Alipay client unavailable: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Payment service is not configured on this server. "
+                "Install python-alipay-sdk and set ALIPAY_* in backend .env. "
+                f"Reason: {exc}"
+            ),
+        ) from exc
+
     out_trade_no = f"deposit_{current_user.id}_{uuid4().hex[:12]}"
     total_amount = str(deposit.amount)
 
-    order_string = alipay.api_alipay_trade_page_pay(
-        out_trade_no=out_trade_no,
-        total_amount=total_amount,
-        subject=f"Library Deposit - {current_user.username}",
-        return_url=settings.ALIPAY_RETURN_URL,
-        notify_url=settings.ALIPAY_NOTIFY_URL,
-        product_code="FAST_INSTANT_TRADE_PAY",
-    )
+    try:
+        order_string = alipay.api_alipay_trade_page_pay(
+            out_trade_no=out_trade_no,
+            total_amount=total_amount,
+            subject=f"Library Deposit - {current_user.username}",
+            return_url=settings.ALIPAY_RETURN_URL,
+            notify_url=settings.ALIPAY_NOTIFY_URL,
+            product_code="FAST_INSTANT_TRADE_PAY",
+        )
+    except Exception as exc:
+        logger.exception("Alipay page pay sign/request build failed")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Failed to create Alipay order. Check keys and gateway in .env. {exc}",
+        ) from exc
     pay_url = f"{settings.ALIPAY_GATEWAY}?{order_string}"
 
     crud_deposit.set_deposit_pending(db, deposit)

@@ -17,6 +17,8 @@ else:
 
 class Settings(BaseSettings):
     # 为这些字段提供默认值 None，或者直接赋值，防止初始化时报错
+    # 逗号分隔，例如：http://localhost:3000,http://192.168.1.5:3000
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./library.db")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
