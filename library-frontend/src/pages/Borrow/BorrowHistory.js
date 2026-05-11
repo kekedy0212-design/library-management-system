@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { fetchBorrowHistoryStart, fetchBorrowHistorySuccess, fetchBorrowHistoryFailure } from '../../store/slices/borrowSlice';
 import { borrowService } from '../../services/borrowService';
-import { formatDate, getStatusText, getStatusColor } from '../../utils/helpers';
+import { formatDate } from '../../utils/helpers';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import MdCard from '../../components/MdCard';
@@ -233,75 +233,124 @@ const BorrowHistory = () => {
               </tr>
             </thead>
             <tbody>
-              {visibleHistory.map(record => (
-                <tr key={record.id} style={{ borderBottom: '1px solid var(--md-sys-color-outline-variant)', transition: 'background 0.2s' }}>
-                  <td style={tableCellStyle}>
-                    <input
-                      type="checkbox"
-                      checked={selectedReturnIds.includes(record.id)}
-                      onChange={() => toggleSelectReturn(record.id)}
-                      disabled={record.status !== 'approved' || batchReturning || returnLoading !== null}
-                      aria-label={`Select borrow record ${record.id} for return`}
-                    />
-                  </td>
-                  <td style={tableCellStyle}>
-                    <div style={{ fontWeight: '500' }}>{record.book?.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#666' }}>ISBN: {record.book?.isbn}</div>
-                  </td>
-                  <td style={tableCellStyle}>{formatDate(record.request_date)}</td>
-                  <td style={tableCellStyle}>
-                    {record.due_date ? (
-                      <span style={{ color: shouldHighlightDueDate(record) ? 'var(--md-sys-color-error)' : 'inherit' }}>
-                        {formatDate(record.due_date)}
-                      </span>
-                    ) : '-'}
-                  </td>
-                  <td style={tableCellStyle}>
-                    <StatusBadge status={record.status} notes={record.librarian_notes} />
-                    {isAutoAssignedReservation(record) && (
-                      <div style={{
-                        marginTop: '6px',
-                        display: 'inline-block',
-                        backgroundColor: '#e8f5e9',
-                        color: '#1b5e20',
-                        border: '1px solid #a5d6a7',
-                        borderRadius: '10px',
-                        padding: '2px 8px',
-                        fontSize: '0.7rem',
-                        fontWeight: '600',
-                      }}>
-                        Auto assigned from reservation
+              {visibleHistory
+                .filter(record => record.book)
+                .map(record => (
+                  <tr
+                    key={record.id}
+                    style={{
+                      borderBottom: '1px solid var(--md-sys-color-outline-variant)',
+                      transition: 'background 0.2s'
+                    }}
+                  >
+                    <td style={tableCellStyle}>
+                      <input
+                        type="checkbox"
+                        checked={selectedReturnIds.includes(record.id)}
+                        onChange={() => toggleSelectReturn(record.id)}
+                        disabled={
+                          record.status !== 'approved' ||
+                          batchReturning ||
+                          returnLoading !== null
+                        }
+                        aria-label={`Select borrow record ${record.id} for return`}
+                      />
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      <div style={{ fontWeight: '500' }}>
+                        {record.book.title}
                       </div>
-                    )}
-                  </td>
-                  <td style={{ ...tableCellStyle, textAlign: 'right' }}>
-                    {record.status === 'approved' && (
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={() => handleRenew(record.id)}
-                          disabled={renewLoading === record.id || returnLoading === record.id || batchReturning}
-                          style={actionButtonStyle}
+
+                      <div style={{ fontSize: '0.75rem', color: '#666' }}>
+                        ISBN: {record.book.isbn}
+                      </div>
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {formatDate(record.request_date)}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      {record.due_date ? (
+                        <span
+                          style={{
+                            color: shouldHighlightDueDate(record)
+                              ? 'var(--md-sys-color-error)'
+                              : 'inherit'
+                          }}
                         >
-                          {renewLoading === record.id ? 'Processing...' : 'Renew'}
-                        </button>
-                        <button
-                          onClick={() => handleReturn(record.id)}
-                          disabled={returnLoading === record.id || renewLoading === record.id || batchReturning}
-                          style={actionButtonStyle}
+                          {formatDate(record.due_date)}
+                        </span>
+                      ) : '-'}
+                    </td>
+
+                    <td style={tableCellStyle}>
+                      <StatusBadge
+                        status={record.status}
+                        notes={record.librarian_notes}
+                      />
+
+                      {isAutoAssignedReservation(record) && (
+                        <div
+                          style={{
+                            marginTop: '6px',
+                            display: 'inline-block',
+                            backgroundColor: '#e8f5e9',
+                            color: '#1b5e20',
+                            border: '1px solid #a5d6a7',
+                            borderRadius: '10px',
+                            padding: '2px 8px',
+                            fontSize: '0.7rem',
+                            fontWeight: '600',
+                          }}
                         >
-                          {returnLoading === record.id ? 'Processing...' : 'Return Book'}
-                        </button>
-                      </div>
-                    )}
-                    {hasPermission(ROLES.LIBRARIAN) && record.status === 'pending' && (
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button style={actionButtonStyle}>Approve</button>
-                        <button style={{ ...actionButtonStyle, color: 'var(--md-sys-color-error)' }}>Deny</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                          Auto assigned from reservation
+                        </div>
+                      )}
+                    </td>
+
+                    <td style={{ ...tableCellStyle, textAlign: 'right' }}>
+                      {record.status === 'approved' && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '8px',
+                            justifyContent: 'flex-end'
+                          }}
+                        >
+                          <button
+                            onClick={() => handleRenew(record.id)}
+                            disabled={
+                              renewLoading === record.id ||
+                              returnLoading === record.id ||
+                              batchReturning
+                            }
+                            style={actionButtonStyle}
+                          >
+                            {renewLoading === record.id
+                              ? 'Processing...'
+                              : 'Renew'}
+                          </button>
+
+                          <button
+                            onClick={() => handleReturn(record.id)}
+                            disabled={
+                              returnLoading === record.id ||
+                              renewLoading === record.id ||
+                              batchReturning
+                            }
+                            style={actionButtonStyle}
+                          >
+                            {returnLoading === record.id
+                              ? 'Processing...'
+                              : 'Return Book'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
 
