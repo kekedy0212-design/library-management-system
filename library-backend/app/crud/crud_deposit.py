@@ -104,3 +104,67 @@ def mark_payment_failed(db: Session, tx: DepositTransaction, notify_payload: str
     db.commit()
     db.refresh(tx)
     return tx
+
+
+def create_refund_transaction(
+    db: Session,
+    deposit_id: int,
+    out_trade_no: str,
+    amount: Decimal,
+) -> DepositTransaction:
+    tx = DepositTransaction(
+        deposit_id=deposit_id,
+        biz_type=TransactionType.REFUND,
+        out_trade_no=out_trade_no,
+        amount=amount,
+        channel="alipay",
+        status=TransactionStatus.CREATED,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+def set_deposit_refund_pending(db: Session, deposit: Deposit):
+    deposit.status = DepositStatus.REFUND_PENDING
+    db.add(deposit)
+    db.commit()
+    db.refresh(deposit)
+    return deposit
+
+
+def mark_refund_success(
+    db: Session,
+    tx: DepositTransaction,
+    trade_no: str | None,
+    notify_payload: str,
+):
+    if tx.status == TransactionStatus.SUCCESS:
+        return tx
+
+    tx.status = TransactionStatus.SUCCESS
+    tx.trade_no = trade_no
+    tx.raw_notify = notify_payload
+    tx.updated_at = datetime.utcnow()
+
+    deposit = db.query(Deposit).filter(Deposit.id == tx.deposit_id).first()
+    if deposit and deposit.status != DepositStatus.REFUNDED:
+        deposit.status = DepositStatus.REFUNDED
+        deposit.refunded_at = datetime.utcnow()
+        db.add(deposit)
+
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+def mark_refund_failed(db: Session, tx: DepositTransaction, notify_payload: str):
+    tx.status = TransactionStatus.FAILED
+    tx.raw_notify = notify_payload
+    tx.updated_at = datetime.utcnow()
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx

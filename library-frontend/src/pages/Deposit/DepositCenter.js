@@ -10,6 +10,7 @@ const DepositCenter = () => {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [toast, setToast] = useState({ visible: false, type: 'info', text: '' });
 
@@ -112,6 +113,54 @@ const DepositCenter = () => {
     }
   };
 
+  const handleRefundClick = async () => {
+    if (!deposit || refunding) return;
+    setRefunding(true);
+    try {
+      const resp = await depositService.requestRefund();
+      const outRefundNo = resp.data.out_refund_no;
+
+      // poll for refund status
+      let attempt = 0;
+      const maxAttempts = 8;
+      const intervalMs = 1500;
+      let timer = null;
+
+      const checkStatus = async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          try {
+            await depositService.confirmRefund(outRefundNo);
+          } catch {
+            // ignore
+          }
+        }
+
+        const data = await loadDeposit(true);
+        if (data?.status === 'refunded') {
+          if (timer) clearInterval(timer);
+          setRefunding(false);
+          setToast({ visible: true, type: 'success', text: '退款成功，押金已退回。' });
+          return;
+        }
+
+        if (attempt >= maxAttempts) {
+          if (timer) clearInterval(timer);
+          setRefunding(false);
+          setToast({ visible: true, type: 'warning', text: '退款正在处理中，请稍后查看状态。' });
+        }
+      };
+
+      checkStatus();
+      timer = setInterval(checkStatus, intervalMs);
+
+    } catch (err) {
+      setToast({ visible: true, type: 'error', text: `退款失败: ${err.response?.data?.detail || err.message}` });
+    } finally {
+      setRefunding(false);
+    }
+  };
+
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>Loading deposit info...</div>;
   }
@@ -166,7 +215,17 @@ const DepositCenter = () => {
           <button onClick={() => loadDeposit(false)} disabled={polling} style={secondaryButton}>
             {polling ? 'Checking...' : 'Refresh Status'}
           </button>
+          {deposit?.status === 'paid' && (
+              <button
+                onClick={handleRefundClick}
+                disabled={refunding}
+                style={secondaryButton}
+              >
+                {refunding ? 'Processing...' : 'Request Refund'}
+              </button>
+          )}
         </div>
+        
       </MdCard>
     </div>
   );

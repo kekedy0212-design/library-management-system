@@ -42,3 +42,17 @@ class DepositTransactionPublic(BaseModel):
     channel: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class DepositRefundRequest(BaseModel):
+    reason: str | None = None
+
+
+class DepositRefundResponse(BaseModel):
+    out_refund_no: str
+    amount: Decimal
+    status: str
+
+
+class DepositRefundConfirmRequest(BaseModel):
+    out_refund_no: str

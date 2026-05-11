@@ -45,6 +45,25 @@ def get_user_borrow_history(db: Session, user_id: int):
     return results
 
 
+def user_has_active_borrows(db: Session, user_id: int) -> bool:
+    """判断用户是否有正在借阅的书籍。
+
+    视为正在借阅的记录包括：`APPROVED`（已借出，未归还）和 `RETURN_PENDING`（待归还处理中）。
+    过滤掉续借和预约类的伪记录。
+    """
+    from app.models.borrow import BorrowStatus
+
+    reconcile_legacy_return_pending(db)
+    reconcile_reservations(db)
+
+    record = db.query(BorrowRecord).filter(
+        BorrowRecord.user_id == user_id,
+        BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.RETURN_PENDING]),
+        _not_renew_request_filter()
+    ).first()
+    return bool(record)
+
+
 def get_all_borrow_records(db: Session):
     """馆员查看全量借阅记录（含借阅/预约/续借/归还历史）"""
     reconcile_legacy_return_pending(db)
