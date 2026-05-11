@@ -46,7 +46,23 @@ def request_return(
     """用户直接还书（无需管理员审批）"""
     logger.info(f"📥 [直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 提交还书 | 借记录 ID: {request_in.borrow_record_id}")
     
-    record = crud_borrow.create_return_request(db, current_user.id, request_in.borrow_record_id)
+    try:
+        record = crud_borrow.create_return_request(
+            db,
+            current_user.id,
+            request_in.borrow_record_id,
+            copy_id=request_in.copy_id,
+            isbn=request_in.isbn,
+            barcode_number=request_in.barcode_number,
+            barcode=request_in.barcode,
+        )
+    except ValueError as e:
+        logger.warning(
+            f"❌ [直接还书失败] 一致性校验失败 | 用户: {current_user.username} | "
+            f"记录 ID: {request_in.borrow_record_id} | 原因: {str(e)}"
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not record:
         logger.warning(f"❌ [直接还书失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}")
         raise HTTPException(status_code=400, detail="Invalid borrow record or book not borrowed")

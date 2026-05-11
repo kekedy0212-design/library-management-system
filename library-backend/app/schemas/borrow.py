@@ -13,6 +13,11 @@ class ReserveRequestCreate(BaseModel):
 
 class ReturnRequestCreate(BaseModel):
     borrow_record_id: int
+    # 可选二次校验参数：后端会校验其与借阅记录中的副本是否一致
+    copy_id: int | None = None
+    isbn: str | None = None
+    barcode_number: int | None = None
+    barcode: str | None = None  # 格式: ISBN/COPY_NUMBER
 
 class RenewRequestCreate(BaseModel):
     borrow_record_id: int

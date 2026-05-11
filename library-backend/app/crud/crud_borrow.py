@@ -11,6 +11,29 @@ RENEW_NOTE_PREFIX = "__RENEW__:"
 RESERVE_NOTE_FLAG = "__RESERVE__"
 
 
+def _normalize_isbn(isbn: str | None) -> str:
+    return str(isbn or "").replace("-", "").replace(" ", "").strip()
+
+
+def _parse_barcode_text(barcode: str | None):
+    """解析条码文本，格式: ISBN/COPY_NUMBER"""
+    if not barcode:
+        return None, None
+
+    parts = str(barcode).split("/")
+    if len(parts) != 2:
+        raise ValueError("Invalid barcode format. Expected ISBN/COPY_NUMBER")
+
+    isbn = parts[0].strip()
+    copy_number_text = parts[1].strip()
+    if not isbn:
+        raise ValueError("Invalid barcode: ISBN missing")
+    if not copy_number_text.isdigit():
+        raise ValueError("Invalid barcode: COPY_NUMBER must be a positive integer")
+
+    return isbn, int(copy_number_text)
+
+
 def _not_renew_request_filter():
     """过滤掉续借请求记录（__RENEW__），避免被当作真实在借记录。"""
     return or_(
@@ -160,7 +183,15 @@ def create_reserve_request(db: Session, user_id: int, request_in: BorrowRequestC
     logger.info(f"✅ [CRUD] 预约请求已创建 | 记录 ID: {db_record.id} | 用户 ID: {user_id} | 书籍: {book.title}")
     return db_record
 
-def create_return_request(db: Session, user_id: int, record_id: int):
+def create_return_request(
+    db: Session,
+    user_id: int,
+    record_id: int,
+    copy_id: int | None = None,
+    isbn: str | None = None,
+    barcode_number: int | None = None,
+    barcode: str | None = None,
+):
     """直接归还书籍（无需管理员审批）"""
     from app.models.copy import BookCopy, CopyStatus
     
@@ -175,17 +206,41 @@ def create_return_request(db: Session, user_id: int, record_id: int):
     if not record:
         logger.warning(f"⚠️ [CRUD] 还书请求失败: 记录不存在或状态不是APPROVED | 记录 ID: {record_id}")
         return None
+
+    # 二次一致性校验：后端独立校验，避免仅依赖前端匹配逻辑
+    parsed_isbn, parsed_barcode_number = _parse_barcode_text(barcode)
+    expected_isbn = parsed_isbn or isbn
+    expected_barcode_number = parsed_barcode_number if parsed_barcode_number is not None else barcode_number
+
+    if copy_id is not None:
+        if record.copy_id is None or record.copy_id != copy_id:
+            raise ValueError("Copy consistency check failed: provided copy_id does not match borrow record")
+
+    copy = None
+    if record.copy_id is not None:
+        copy = db.query(BookCopy).filter(BookCopy.id == record.copy_id).first()
+        if not copy:
+            raise ValueError("Copy consistency check failed: borrow record references a missing copy")
+
+    if expected_barcode_number is not None:
+        if copy is None or copy.barcode_number != expected_barcode_number:
+            raise ValueError("Copy consistency check failed: barcode number does not match borrow record")
+
+    if expected_isbn:
+        book = db.query(Book).filter(Book.id == record.book_id).first()
+        if not book:
+            raise ValueError("Copy consistency check failed: borrow record references a missing book")
+        if _normalize_isbn(book.isbn) != _normalize_isbn(expected_isbn):
+            raise ValueError("Copy consistency check failed: ISBN does not match borrow record")
     
     try:
         book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
         
         # 更新副本状态为可用
-        if record.copy_id:
-            copy = db.query(BookCopy).filter(BookCopy.id == record.copy_id).first()
-            if copy:
-                copy.status = CopyStatus.AVAILABLE
-                db.add(copy)
-                logger.debug(f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
+        if copy:
+            copy.status = CopyStatus.AVAILABLE
+            db.add(copy)
+            logger.debug(f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
         
         book.available_copies += 1
         # 旧流程中可能已经存在 return_request_date，这里保持幂等
