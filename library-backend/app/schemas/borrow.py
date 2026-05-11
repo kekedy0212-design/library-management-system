@@ -58,6 +58,7 @@ class BorrowRecordPublic(BaseModel):
     id: int
     user_id: int
     book_id: int
+    copy_id: int | None
     request_date: datetime
     approve_date: datetime | None
     due_date: datetime | None

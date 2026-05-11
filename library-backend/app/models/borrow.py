@@ -17,7 +17,8 @@ class BorrowRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
+    copy_id = Column(Integer, ForeignKey("book_copies.id"), nullable=True)  # 预约时可为空
+    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)  # 冗余存储，便于查询
     request_date = Column(DateTime(timezone=True), server_default=func.now())
     approve_date = Column(DateTime(timezone=True), nullable=True)
     due_date = Column(DateTime(timezone=True), nullable=True)
@@ -28,3 +29,5 @@ class BorrowRecord(Base):
 
     user = relationship("User")
     book = relationship("Book")
+    # 使用字符串+select加载以避免循环导入和N+1查询问题
+    copy = relationship("BookCopy", lazy="select")

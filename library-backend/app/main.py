@@ -11,6 +11,7 @@ import time
 # 导入所有模型（必须！否则表不会创建）
 from app.models.user import User, UserRole
 from app.models.book import Book
+from app.models.copy import BookCopy
 from app.models.borrow import BorrowRecord
 from app.models.deposit import Deposit, DepositTransaction
 
@@ -22,8 +23,21 @@ logger = get_logger(__name__)
 
 logger.info("🔧 [应用启动] 开始初始化图书馆管理系统...")
 
-# 创建数据库表
+# 创建数据库表 - 先删除旧表再重建以确保表结构最新
 try:
+    # 检查是否需要重建表（如果borrow_records表缺少copy_id列）
+    from sqlalchemy import inspect
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+    
+    if 'borrow_records' in existing_tables:
+        columns = [col['name'] for col in inspector.get_columns('borrow_records')]
+        if 'copy_id' not in columns:
+            logger.warning("⚠️ [数据库] 检测到borrow_records表缺少copy_id列，准备重建...")
+            Base.metadata.drop_all(bind=engine)
+            logger.info("🗑️ [数据库] 已删除所有旧表")
+    
+    # 创建所有表
     Base.metadata.create_all(bind=engine)
     logger.info("✅ [数据库] 数据库表已创建/验证")
 except Exception as e:

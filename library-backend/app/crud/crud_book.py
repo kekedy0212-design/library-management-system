@@ -67,7 +67,9 @@ def get_active_borrowed_count(db: Session, book_id: int) -> int:
     ).count()
 
 def create_book(db: Session, book_in: BookCreate):
-    """创建书籍时，自动将available_copies设置为total_copies"""
+    """创建书籍时，自动将available_copies设置为total_copies，并创建对应的BookCopy副本"""
+    from app.crud import crud_copy
+    
     db_book = Book(
         **book_in.model_dump(),
         available_copies=book_in.total_copies  # 自动设置为总数量
@@ -75,7 +77,11 @@ def create_book(db: Session, book_in: BookCreate):
     db.add(db_book)
     db.commit()
     db.refresh(db_book)
-    logger.info(f"🔧 [CRUD] 创建新书籍 | 书名: {db_book.title} | ISBN: {db_book.isbn} | 总数: {db_book.total_copies} | ID: {db_book.id}")
+    
+    # 自动创建BookCopy副本
+    crud_copy.create_book_copies(db, db_book.id, book_in.total_copies)
+    
+    logger.info(f"🔧 [CRUD] 创建新书籍 | 书名: {db_book.title} | ISBN: {db_book.isbn} | 总数: {db_book.total_copies} | ID: {db_book.id} | 已创建副本数: {book_in.total_copies}")
     return db_book
 
 def update_book(db: Session, db_book: Book, book_in: BookUpdate):
@@ -138,6 +144,8 @@ def update_book(db: Session, db_book: Book, book_in: BookUpdate):
     return db_book
 
 def delete_book(db: Session, book_id: int):
+    from app.crud import crud_copy
+    
     book = db.query(Book).filter(Book.id == book_id).first()
     if book:
         active_borrowed_count = get_active_borrowed_count(db, book_id)
@@ -148,6 +156,10 @@ def delete_book(db: Session, book_id: int):
             raise ValueError("Cannot delete book while it is actively borrowed")
 
         logger.info(f"🗑️ [CRUD] 删除书籍 | 书名: {book.title} | ISBN: {book.isbn} | ID: {book_id}")
+        
+        # 删除所有BookCopy副本
+        crud_copy.delete_book_copies(db, book_id)
+        
         db.delete(book)
         db.commit()
         logger.info(f"✅ [CRUD] 书籍删除成功 | ID: {book_id}")
