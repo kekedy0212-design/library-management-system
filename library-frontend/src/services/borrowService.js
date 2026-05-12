@@ -1,9 +1,10 @@
 import api from './api';
 
 export const borrowService = {
-  borrowRequest: (bookId, requestedDueDate = null) =>
+  borrowRequest: (bookId, copyId, requestedDueDate = null) =>
     api.post('/borrow-requests', {
       book_id: bookId,
+      copy_id: copyId,
       requested_due_date: requestedDueDate,
     }),
   reserveRequest: (bookId) => api.post('/reserve-requests', { book_id: bookId }),

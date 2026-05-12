@@ -18,13 +18,14 @@ const parseBarcode = (text) => {
     }
 
     const isbn = parts[0]?.trim();
-    const copyCode = parts[1]?.trim();
+
+    const copyText = parts[1]?.trim();
 
     if (!isbn) {
         throw new Error('ISBN missing');
     }
 
-    if (!/^\d+$/.test(copyCode)) {
+    if (!/^\d+$/.test(copyText)) {
         throw new Error(
             'Copy ID must be a positive integer'
         );
@@ -32,8 +33,12 @@ const parseBarcode = (text) => {
 
     return {
         raw: text,
+
         isbn,
-        copyCode,
+
+        copyId: Number(copyText),
+
+        barcode: text,
     };
 };
 
@@ -48,64 +53,59 @@ const BorrowScannerDialog = ({
     const [errors, setErrors] = useState([]);
     const [borrowing, setBorrowing] = useState(false);
 
+    const [scannerKey, setScannerKey] = useState(0);
+    useEffect(() => {
+        if (open) {
+            setScannerKey(prev => prev + 1);
+        }
+    }, [open]);
+
     const handleDetected = async (rawText) => {
+        // 辅助函数：标准化 ISBN
+        const normalizeIsbn = (isbn) => String(isbn || '').replace(/[- \s]/g, '').trim();
+
         try {
             const parsed = parseBarcode(rawText);
+            const currentNormalizedIsbn = normalizeIsbn(parsed.isbn);
 
-            // Prevent duplicate scan
-            const exists = scannedBooks.some(
-                item => item.raw === parsed.raw
-            );
-
-            if (exists) {
-                return;
-            }
-
-            // IMPORTANT:
-            // Do NOT use fetchBooks here
-            // because it overwrites global redux state
-            const normalizeIsbn = (isbn) =>
-                String(isbn || '')
-                    .replace(/-/g, '')
-                    .replace(/\s/g, '')
-                    .trim();
-
-            const response = await bookService.getBooks({
-                search: parsed.isbn,
+            // --- 核心修改：检查 state 中是否已存在该 ISBN ---
+            // 注意：要同时检查 item 本身和 item.book 里的 isbn
+            const isDuplicate = scannedBooks.some(item => {
+                const existingIsbn = item.isbn || item.book?.isbn;
+                return normalizeIsbn(existingIsbn) === currentNormalizedIsbn;
             });
 
-            const matchedBooks = response.data || [];
+            if (isDuplicate) {
+                console.warn("Duplicate ISBN detected, ignoring:", currentNormalizedIsbn);
+                return; // 发现重复，直接退出，不执行后续逻辑
+            }
 
-            const matchedBook = matchedBooks.find(
-                book =>
-                    normalizeIsbn(book.isbn) ===
-                    normalizeIsbn(parsed.isbn)
-            );
+            // 调用接口获取书籍详情
+            const response = await bookService.getBooks({ search: parsed.isbn });
+            const matchedBooks = response.data || [];
+            const matchedBook = matchedBooks.find(b => normalizeIsbn(b.isbn) === currentNormalizedIsbn);
 
             if (!matchedBook) {
-                throw new Error(
-                    `No exact ISBN match found: ${parsed.isbn}`
-                );
+                throw new Error(`未找到 ISBN 匹配的书籍: ${parsed.isbn}`);
             }
+
             navigator.vibrate?.(80);
 
-            setScannedBooks(prev => [
-                ...prev,
-                {
-                    ...parsed,
-                    book: matchedBook,
-                }
-            ]);
+            // 写入 State
+            setScannedBooks(prev => {
+                const newList = [...prev, { ...parsed, book: matchedBook }];
+
+                // 根据 ISBN 去重
+                const map = new Map();
+                return newList.filter(item => {
+                    const id = normalizeIsbn(item.isbn || item.book?.isbn);
+                    return map.has(id) ? false : map.set(id, true);
+                });
+            });
 
         } catch (err) {
             console.error(err);
-
-            setErrors(prev => [
-                err.response?.data?.detail ||
-                err.message ||
-                'Scan failed',
-                ...prev,
-            ]);
+            setErrors(prev => [err.message || '扫码失败', ...prev]);
         }
     };
 
@@ -121,40 +121,37 @@ const BorrowScannerDialog = ({
 
         for (const item of scannedBooks) {
             try {
-                await borrowBook(item.book.id);
+                // 确保所有 ID 都是纯 Integer 类型
+                const payload = {
+                    book_id: Number(item.book.id), // 强制转换
+                    copy_id: Number(item.copyId),  // 强制转换
+                };
+                await borrowBook(payload);
 
-                succeeded.push(item.book.id);
+                succeeded.push(item.raw);
+
             } catch (err) {
-                failed.push(
-                    `${item.book.title}: ${err.response?.data?.detail ||
-                    err.message ||
-                    'Borrow failed'
-                    }`
-                );
+                console.error("Single book borrow failed:", err);
+
+                // 提取具体的错误信息
+                // 后端的 detail 可能是数组（如你提供的报错），也可能是字符串
+                let errorMsg = 'Borrow failed';
+                const detail = err.response?.data?.detail;
+
+                if (Array.isArray(detail)) {
+                    errorMsg = detail[0]?.msg || errorMsg;
+                } else if (typeof detail === 'string') {
+                    errorMsg = detail;
+                } else {
+                    errorMsg = err.message || errorMsg;
+                }
+
+                failed.push(`${item.book.title}: ${errorMsg}`);
             }
         }
 
+        // ... 后续处理成功或失败的状态更新
         setBorrowing(false);
-
-        // Remove successful items
-        if (succeeded.length) {
-            setScannedBooks(prev =>
-                prev.filter(
-                    item =>
-                        !succeeded.includes(item.book.id)
-                )
-            );
-        }
-
-        if (failed.length) {
-            setErrors(prev => [...failed, ...prev]);
-        }
-
-        if (succeeded.length) {
-            alert(
-                `${succeeded.length} book(s) borrowed successfully`
-            );
-        }
     };
 
     const clearErrors = () => {
@@ -336,6 +333,7 @@ const BorrowScannerDialog = ({
                             }}
                         >
                             <BarcodeScanner
+                                key={scannerKey}
                                 active={open}
                                 onDetected={handleDetected}
                                 onError={(msg) => {
@@ -436,7 +434,7 @@ const BorrowScannerDialog = ({
 
                             {scannedBooks.map((item, index) => (
                                 <div
-                                    key={item.raw}
+                                    key={item.book?.isbn || item.isbn}
                                     style={{
                                         padding: '16px',
                                         marginBottom: '12px',
@@ -493,7 +491,7 @@ const BorrowScannerDialog = ({
                                                 />
 
                                                 <Badge
-                                                    label={`Copy ID: ${item.copyCode}`}
+                                                    label={`Copy ID: ${item.copyId}`}
                                                 />
                                             </div>
                                         </div>

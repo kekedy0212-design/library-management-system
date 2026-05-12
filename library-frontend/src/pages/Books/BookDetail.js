@@ -376,7 +376,7 @@ const BookDetail = () => {
             </p>
           </MdCard>
 
-          {currentBook.available_copies > 0 && (
+          {/*currentBook.available_copies > 0 && (
             <MdCard variant="outlined" style={{ padding: '20px' }}>
               <h3 style={sectionTitleStyle}>Preferred Return Date</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -397,7 +397,7 @@ const BookDetail = () => {
                 </span>
               </div>
             </MdCard>
-          )}
+          )*/}
 
           {/* Action Footer - 右对齐处理 */}
           <div style={{
@@ -416,7 +416,7 @@ const BookDetail = () => {
               </>
             )}
 
-            {currentBook.available_copies > 0 && (
+            {/* {currentBook.available_copies > 0 && (
               <button
                 onClick={handleBorrow}
                 disabled={borrowLoading}
@@ -424,8 +424,8 @@ const BookDetail = () => {
               >
                 {borrowLoading ? 'Processing...' : 'Request to Borrow'}
               </button>
-            )}
-            {currentBook.available_copies <= 0 && (
+            )} */}
+            {/* {currentBook.available_copies <= 0 && (
               <button
                 onClick={handleReserve}
                 disabled={reserveLoading}
@@ -433,7 +433,7 @@ const BookDetail = () => {
               >
                 {reserveLoading ? 'Processing...' : 'Request Reservation'}
               </button>
-            )}
+            )} */}
           </div>
         </div>
       </div>

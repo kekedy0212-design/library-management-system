@@ -1,152 +1,392 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import React, {
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
+
+import {
+    BrowserMultiFormatReader,
+} from '@zxing/library';
 
 const BarcodeScanner = ({
     active = false,
     onDetected,
     onError,
 }) => {
+
     const videoRef = useRef(null);
+
     const scannerRef = useRef(null);
 
-    const [cameraError, setCameraError] = useState('');
-    const [starting, setStarting] = useState(true);
+    const streamRef = useRef(null);
+
+    const destroyedRef = useRef(false);
 
     const lastScanRef = useRef('');
+
     const lastScanTimeRef = useRef(0);
 
-    useEffect(() => {
-        if (!active) {
-            return;
-        }
+    const [starting, setStarting] =
+        useState(false);
 
-        const scanner = new BrowserMultiFormatReader();
+    const [cameraError, setCameraError] =
+        useState('');
 
-        scannerRef.current = scanner;
+    // =========================================
+    // stop camera safely
+    // =========================================
 
-        let destroyed = false;
+    const stopCamera = async () => {
 
-        const startScanner = async () => {
-            try {
-                setStarting(true);
-                setCameraError('');
+        try {
 
-                // IMPORTANT:
-                // New versions use INSTANCE method
-                const devices =
-                    await scanner.listVideoInputDevices();
+            // stop zxing decode
+            if (scannerRef.current) {
 
-                if (!devices.length) {
-                    throw new Error('No camera found');
+                scannerRef.current.reset();
+
+                scannerRef.current = null;
+            }
+
+            // stop media stream
+            if (streamRef.current) {
+
+                streamRef.current
+                    .getTracks()
+                    .forEach(track => {
+                        track.stop();
+                    });
+
+                streamRef.current = null;
+            }
+
+            // IMPORTANT:
+            // fully detach video
+            if (videoRef.current) {
+
+                try {
+
+                    videoRef.current.pause();
+
+                } catch (err) {
+                    console.warn(err);
                 }
 
-                // Prefer back camera on mobile
-                const backCamera =
-                    devices.find(device =>
-                        /back|rear|environment/gi.test(
-                            device.label
-                        )
-                    ) || devices[0];
+                videoRef.current.onloadedmetadata =
+                    null;
 
-                await scanner.decodeFromVideoDevice(
-                    backCamera.deviceId,
-                    videoRef.current,
-                    (result, err) => {
-                        if (destroyed) {
+                videoRef.current.srcObject = null;
+
+                videoRef.current.removeAttribute(
+                    'src'
+                );
+
+                videoRef.current.pause();
+
+                videoRef.current.srcObject = null;
+            }
+
+            // IMPORTANT:
+            // wait browser release hardware
+            await new Promise(resolve =>
+                setTimeout(resolve, 300)
+            );
+
+        } catch (err) {
+
+            console.error(err);
+        }
+    };
+
+    // =========================================
+    // release zombie browser sessions
+    // =========================================
+
+    const releaseBrowserCameraLocks =
+        async () => {
+
+            try {
+
+                const tempStream =
+                    await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: false,
+                    });
+
+                tempStream
+                    .getTracks()
+                    .forEach(track => {
+                        track.stop();
+                    });
+
+            } catch (err) {
+
+                console.warn(err);
+            }
+        };
+
+    // =========================================
+    // start scanner
+    // =========================================
+
+    const startScanner = async () => {
+
+        try {
+
+            setStarting(true);
+
+            setCameraError('');
+
+            // release old sessions
+            await releaseBrowserCameraLocks();
+
+            // create scanner
+            const scanner =
+                new BrowserMultiFormatReader();
+
+            scannerRef.current = scanner;
+
+            // enumerate devices
+            const devices =
+                await scanner.listVideoInputDevices();
+
+            if (!devices.length) {
+
+                throw new Error(
+                    'No camera found'
+                );
+            }
+
+            // prefer rear camera
+            const backCamera =
+                devices.find(device =>
+                    /back|rear|environment/i.test(
+                        device.label
+                    )
+                ) || devices[0];
+
+            // create media stream
+            const stream =
+                await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        deviceId: {
+                            exact:
+                                backCamera.deviceId,
+                        },
+                        facingMode:
+                            'environment',
+                    },
+                    audio: false,
+                });
+
+            if (destroyedRef.current) {
+
+                stream
+                    .getTracks()
+                    .forEach(track => {
+                        track.stop();
+                    });
+
+                return;
+            }
+
+            streamRef.current = stream;
+
+            if (!videoRef.current) {
+
+                stream
+                    .getTracks()
+                    .forEach(track => {
+                        track.stop();
+                    });
+
+                return;
+            }
+
+            // attach stream
+            videoRef.current.srcObject = stream;
+
+            // IMPORTANT:
+            // do NOT use autoplay attribute
+            await videoRef.current.play();
+
+            // IMPORTANT:
+            // wait actual frame ready
+            await new Promise(resolve => {
+
+                if (
+                    videoRef.current.readyState >= 2
+                ) {
+
+                    resolve();
+
+                    return;
+                }
+
+                videoRef.current.onloadeddata =
+                    () => {
+                        resolve();
+                    };
+            });
+
+            if (
+                destroyedRef.current ||
+                !videoRef.current
+            ) {
+
+                stream
+                    .getTracks()
+                    .forEach(track => {
+                        track.stop();
+                    });
+
+                return;
+            }
+
+            // IMPORTANT:
+            // use decodeFromVideoDevice
+            scanner.decodeFromVideoDevice(
+                backCamera.deviceId,
+                videoRef.current,
+                (result, err) => {
+                    if (
+                        destroyedRef.current
+                    ) {
+                        return;
+                    }
+
+                    // success
+                    if (result) {
+
+                        const text =
+                            result.getText();
+
+                        const now =
+                            Date.now();
+
+                        // anti duplicate
+                        if (
+                            text ===
+                            lastScanRef.current &&
+                            now -
+                            lastScanTimeRef.current <
+                            1500
+                        ) {
                             return;
                         }
 
-                        if (result) {
-                            const text = result.getText();
+                        navigator.vibrate?.(80);
 
-                            const now = Date.now();
+                        onDetected?.(text);
 
-                            if (
-                                text === lastScanRef.current &&
-                                now - lastScanTimeRef.current < 2000
-                            ) {
-                                return;
-                            }
+                        // update AFTER success
+                        lastScanRef.current =
+                            text;
 
-                            lastScanRef.current = text;
-                            lastScanTimeRef.current = now;
-
-                            navigator.vibrate?.(80);
-
-                            onDetected?.(text);
-                        }
-
-                        // Ignore continuous scan failures
-                        if (
-                            err &&
-                            err.name !== 'NotFoundException'
-                        ) {
-                            console.error(err);
-                        }
+                        lastScanTimeRef.current =
+                            now;
                     }
-                );
 
-                setStarting(false);
-            } catch (err) {
-                console.error(err);
+                    // ignore common misses
+                    if (
+                        err &&
+                        err.name !==
+                        'NotFoundException'
+                    ) {
 
-                const message =
-                    err?.message ||
-                    'Failed to access camera';
+                        console.error(err);
+                    }
+                }
+            );
 
-                setCameraError(message);
+            setStarting(false);
 
-                onError?.(message);
+        } catch (err) {
 
-                setStarting(false);
+            console.error(err);
+
+            const message =
+                err?.message ||
+                'Failed to access camera';
+
+            setCameraError(message);
+
+            onError?.(message);
+
+            setStarting(false);
+        }
+    };
+
+    // =========================================
+    // lifecycle
+    // =========================================
+
+    useEffect(() => {
+
+        destroyedRef.current = false;
+
+        let mounted = true;
+
+        const init = async () => {
+
+            // ALWAYS cleanup first
+            await stopCamera();
+
+            if (
+                !active ||
+                !mounted
+            ) {
+                return;
             }
+
+            await startScanner();
         };
 
-        startScanner();
+        init();
 
         return () => {
-            destroyed = true;
 
-            if (scannerRef.current) {
-                scannerRef.current.reset();
-            }
+            mounted = false;
+
+            destroyedRef.current = true;
+
+            stopCamera();
         };
-    }, [active, onDetected, onError]);
+
+    }, [active]);
+
+    // =========================================
+    // UI
+    // =========================================
 
     return (
         <div
             style={{
                 width: '100%',
                 overflow: 'hidden',
+
                 borderRadius: '24px',
+
                 background:
                     'var(--md-sys-color-surface-container)',
+
                 border:
                     '1px solid var(--md-sys-color-outline-variant)',
             }}
         >
-            {starting && (
-                <div
-                    style={{
-                        padding: '16px',
-                        textAlign: 'center',
-                        color:
-                            'var(--md-sys-color-on-surface-variant)',
-                    }}
-                >
-                    Starting camera...
-                </div>
-            )}
 
             {cameraError ? (
                 <div
                     style={{
                         padding: '24px',
+
                         textAlign: 'center',
-                        color:
-                            'var(--md-sys-color-on-error-container)',
+
                         background:
                             'var(--md-sys-color-error-container)',
+
+                        color:
+                            'var(--md-sys-color-on-error-container)',
                     }}
                 >
                     {cameraError}
@@ -155,15 +395,19 @@ const BarcodeScanner = ({
                 <video
                     ref={videoRef}
                     muted
-                    autoPlay
                     playsInline
+
                     style={{
                         width: '100%',
                         minHeight: '320px',
+
                         objectFit: 'cover',
-                        display: starting
-                            ? 'none'
-                            : 'block',
+
+                        opacity:
+                            starting ? 0 : 1,
+
+                        transition:
+                            'opacity 0.2s ease',
                     }}
                 />
             )}

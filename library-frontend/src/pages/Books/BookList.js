@@ -393,7 +393,7 @@ const BookList = () => {
                       justifyContent: 'flex-end',
                     }}
                   >
-                    {book.available_copies > 0 && (
+                    {/* {book.available_copies > 0 && (
                       <IconButton
                         onClick={(e) =>
                           handleQuickBorrow(
@@ -404,7 +404,7 @@ const BookList = () => {
                       >
                         Borrow
                       </IconButton>
-                    )}
+                    )} */}
 
                     {hasPermission(
                       ROLES.LIBRARIAN

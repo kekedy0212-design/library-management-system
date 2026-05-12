@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, {
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 import BarcodeScanner from './BarcodeScanner';
 import MdCard from './MdCard';
 import { borrowService } from '../services/borrowService';
@@ -52,36 +56,103 @@ const ReturnScannerDialog = ({
     const [errors, setErrors] = useState([]);
     const [processing, setProcessing] = useState(false);
 
+    const scanningLockRef = useRef(false);
+
     if (!open) {
         return null;
     }
 
     const handleDetected = async (rawText) => {
+
+        // prevent scanner storm
+        if (scanningLockRef.current) {
+            return;
+        }
+
+        scanningLockRef.current = true;
+
         try {
+
             const parsed = parseBarcode(rawText);
 
-            // prevent duplicate scan
-            const exists = scannedRecords.some(
-                item => item.raw === parsed.raw
-            );
+            const normalize = (value) =>
+                String(value || '')
+                    .replace(/-/g, '')
+                    .replace(/\s/g, '')
+                    .trim();
 
-            if (exists) {
+            // =========================
+            // Prevent exact duplicate
+            // =========================
+
+            const duplicatedBarcode =
+                scannedRecords.some(
+                    item =>
+                        normalize(item.raw) ===
+                        normalize(parsed.raw)
+                );
+
+            if (duplicatedBarcode) {
                 return;
             }
 
-            // find matching active borrow record
-            const matchedRecord = borrowHistory.find(record => {
-                if (record.status !== 'approved') {
-                    return false;
-                }
+            // =========================
+            // Prevent same ISBN
+            // =========================
 
-                return (
-                    normalizeIsbn(record.book?.isbn) ===
-                    normalizeIsbn(parsed.isbn)
+            const duplicatedBook =
+                scannedRecords.some(
+                    item =>
+                        normalize(item.isbn) ===
+                        normalize(parsed.isbn)
                 );
-            });
+
+            if (duplicatedBook) {
+
+                throw new Error(
+                    'Another copy of this book is already scanned'
+                );
+            }
+
+            // =========================
+            // Find matching borrow record
+            // =========================
+
+            const matchedRecord =
+                borrowHistory.find(record => {
+
+                    if (record.status !== 'approved') {
+                        return false;
+                    }
+
+                    if (!record.book) {
+                        return false;
+                    }
+
+                    const isbnMatched =
+                        normalize(record.book.isbn) ===
+                        normalize(parsed.isbn);
+
+                    if (!isbnMatched) {
+                        return false;
+                    }
+
+                    // copy-level validation
+                    if (
+                        parsed.copyId &&
+                        record.copy_id
+                    ) {
+                        return (
+                            Number(record.copy_id) ===
+                            Number(parsed.copyId)
+                        );
+                    }
+
+                    return true;
+                });
 
             if (!matchedRecord) {
+
                 throw new Error(
                     `No active borrowing record found for ISBN ${parsed.isbn}`
                 );
@@ -89,23 +160,51 @@ const ReturnScannerDialog = ({
 
             navigator.vibrate?.(80);
 
-            setScannedRecords(prev => [
-                ...prev,
-                {
-                    ...parsed,
-                    record: matchedRecord,
+            // IMPORTANT:
+            // functional update
+            setScannedRecords(prev => {
+
+                // double check latest state
+                const exists =
+                    prev.some(
+                        item =>
+                            normalize(item.isbn) ===
+                            normalize(parsed.isbn)
+                    );
+
+                if (exists) {
+                    return prev;
                 }
-            ]);
+
+                return [
+                    ...prev,
+                    {
+                        ...parsed,
+                        record: matchedRecord,
+                    }
+                ];
+            });
 
         } catch (err) {
+
             console.error(err);
 
+            const message =
+                err?.response?.data?.detail ||
+                err?.message ||
+                'Scan failed';
+
             setErrors(prev => [
-                err.response?.data?.detail ||
-                err.message ||
-                'Scan failed',
+                message,
                 ...prev,
             ]);
+
+        } finally {
+
+            // cooldown
+            setTimeout(() => {
+                scanningLockRef.current = false;
+            }, 1200);
         }
     };
 
@@ -495,7 +594,7 @@ const ReturnScannerDialog = ({
                                                 />
 
                                                 <Badge
-                                                    label={`Copy ID: ${item.copyCode}`}
+                                                    label={`Copy ID: ${item.copyId}`}
                                                 />
 
                                                 <Badge

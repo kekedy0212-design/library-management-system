@@ -22,10 +22,15 @@ export const useBorrow = () => {
     }
   }, [dispatch]);
 
-  const borrowBook = useCallback(async (bookId, requestedDueDate = null) => {
+  const borrowBook = useCallback(async (
+    payload
+  ) => {
     try {
-      const response = await borrowService.borrowRequest(bookId, requestedDueDate);
+      const response =
+        await borrowService.borrowRequest(payload);
+
       dispatch(addBorrowRequest(response.data));
+
       return response.data;
     } catch (err) {
       throw err;
