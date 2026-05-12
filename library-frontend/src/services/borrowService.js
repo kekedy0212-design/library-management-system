@@ -7,7 +7,9 @@ export const borrowService = {
       requested_due_date: requestedDueDate,
     }),
   reserveRequest: (bookId) => api.post('/reserve-requests', { book_id: bookId }),
-  returnRequest: (recordId) => api.post('/return-requests', { borrow_record_id: recordId }),
+  // 支持传入额外条码信息：{ barcode, barcode_number, isbn, copy_id }
+  returnRequest: (recordId, payload = {}) =>
+    api.post('/return-requests', { borrow_record_id: recordId, ...payload }),
   renewRequest: (recordId, requestedDueDate = null) =>
     api.post('/renew-requests', {
       borrow_record_id: recordId,

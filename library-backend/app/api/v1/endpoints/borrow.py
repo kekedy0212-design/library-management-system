@@ -115,7 +115,32 @@ def request_return_batch(
     success_count = 0
     results = []
     for record_id in request_in.borrow_record_ids:
-        record = crud_borrow.create_return_request(db, current_user.id, record_id)
+        borrow_record = crud_borrow.get_borrow_record(db, record_id)
+        if not borrow_record:
+            results.append({
+                "borrow_record_id": record_id,
+                "success": False,
+                "message": "Invalid borrow record or book not borrowed",
+                "record": None
+            })
+            continue
+
+        try:
+            record = crud_borrow.create_return_request(
+                db,
+                current_user.id,
+                record_id,
+                copy_id=borrow_record.copy_id,
+            )
+        except ValueError as e:
+            results.append({
+                "borrow_record_id": record_id,
+                "success": False,
+                "message": str(e),
+                "record": None
+            })
+            continue
+
         if record:
             success_count += 1
             results.append({

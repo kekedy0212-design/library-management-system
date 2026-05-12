@@ -130,7 +130,12 @@ const ReturnScannerDialog = ({
         for (const item of scannedRecords) {
             try {
                 await borrowService.returnRequest(
-                    item.record.id
+                    item.record.id,
+                    {
+                        barcode: item.raw,
+                        barcode_number: parseInt(item.copyCode, 10),
+                        isbn: item.isbn,
+                    }
                 );
 
                 successIds.push(item.record.id);

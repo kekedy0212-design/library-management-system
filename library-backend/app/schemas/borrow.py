@@ -13,7 +13,7 @@ class ReserveRequestCreate(BaseModel):
 
 class ReturnRequestCreate(BaseModel):
     borrow_record_id: int
-    # 可选二次校验参数：后端会校验其与借阅记录中的副本是否一致
+    # 归还可通过内部副本 ID 或者条码信息（barcode / barcode_number）来指定副本
     copy_id: int | None = None
     isbn: str | None = None
     barcode_number: int | None = None
