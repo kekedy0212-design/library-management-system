@@ -6,6 +6,7 @@ import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import MdCard from '../../components/MdCard';
 import BorrowScannerDialog from '../../components/BorrowScannerDialog';
+import Toast from '../../components/Toast';
 
 const BookList = () => {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ const BookList = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [toast, setToast] = useState({ visible: false, type: 'info', text: '' });
 
   useEffect(() => {
     fetchBooks();
@@ -66,15 +68,21 @@ const BookList = () => {
     e.stopPropagation();
 
     try {
-      await borrowBook(bookId);
-
-      alert('Borrow request submitted successfully');
+      await borrowBook({ book_id: bookId });
+      setToast({
+        visible: true,
+        type: 'success',
+        text: 'Borrow request submitted. Please wait for librarian approval.',
+      });
     } catch (err) {
-      alert(
-        err.response?.data?.detail ||
-        err.message ||
-        'Borrow failed'
-      );
+      setToast({
+        visible: true,
+        type: 'error',
+        text:
+          err.response?.data?.detail ||
+          err.message ||
+          'Borrow failed',
+      });
     }
   };
 
@@ -479,6 +487,13 @@ const BookList = () => {
       <BorrowScannerDialog
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
+      />
+
+      <Toast
+        visible={toast.visible}
+        type={toast.type}
+        text={toast.text}
+        onClose={() => setToast((prev) => ({ ...prev, visible: false }))}
       />
     </>
   );

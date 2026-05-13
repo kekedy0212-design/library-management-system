@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import traceback
 from app.core.database import engine, Base, SessionLocal
 from app.core.config import settings as app_settings
 from app.core.logger import setup_logging, get_logger, log_separator
@@ -144,11 +146,18 @@ async def log_requests(request: Request, call_next):
         return response
     except Exception as e:
         process_time = time.time() - start_time
+        tb = traceback.format_exc()
         logger.error(
             f"❌ [Exception] {request.method} {request.url.path}{query_string} "
-            f"| 客户端: {request.client.host} | ⏱️ {process_time:.3f}s | 错误: {str(e)}"
+            f"| 客户端: {request.client.host} | ⏱️ {process_time:.3f}s | 错误: {str(e)}\n{tb}"
         )
-        raise
+        # 把异常转成正常的 JSONResponse 返回，避免响应缺失，
+        # 也让外层 CORSMiddleware 能给响应补上 Access-Control-* 头
+        # （否则浏览器会先看到 CORS 报错，把真正的 500 detail 藏起来）。
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal server error: {str(e)}"},
+        )
 
 # 注册路由
 from app.api.v1.endpoints import auth, users, books, borrow, admin, deposit

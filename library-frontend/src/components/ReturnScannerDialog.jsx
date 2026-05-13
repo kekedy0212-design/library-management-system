@@ -16,7 +16,7 @@ const parseBarcode = (text) => {
 
     if (parts.length !== 2) {
         throw new Error(
-            'Invalid barcode format. Expected ISBN/COPY_ID'
+            `Invalid barcode format. Expected ISBN/COPY_ID but got "${text}"`
         );
     }
 
@@ -25,12 +25,12 @@ const parseBarcode = (text) => {
     const copyText = parts[1]?.trim();
 
     if (!isbn) {
-        throw new Error('ISBN missing');
+        throw new Error(`ISBN missing in "${text}"`);
     }
 
     if (!/^\d+$/.test(copyText)) {
         throw new Error(
-            'Copy ID must be a positive integer'
+            `Copy ID must be a positive integer (got "${copyText}")`
         );
     }
 
