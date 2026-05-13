@@ -134,7 +134,11 @@ def get_all_borrow_records(db: Session):
 
 
 def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCreate):
-    """创建借书请求"""
+    """创建借书请求。
+
+    校验失败时抛出 `ValueError`，端点会将其转为 HTTP 400 并把具体原因
+    透传给前端；只有数据库提交异常等系统级错误才会回滚后返回 `None`。
+    """
     from app.models.copy import BookCopy, CopyStatus
 
     logger.debug(
@@ -143,6 +147,16 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
         f"| 副本 ID: {request_in.copy_id}"
     )
 
+    # 0. 先做一次轻量自愈：清理孤儿 BORROWED 副本（任何用户都借不到的副本）
+    #    历史拒绝 / 异常中断可能留下副本仍是 BORROWED 但没活跃借阅记录的脏数据。
+    try:
+        reconcile_orphan_borrowed_copies(db, book_id=request_in.book_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            f"⚠️ [CRUD] 孤儿副本自愈失败（不影响主流程） | 错误: {exc}"
+        )
+        db.rollback()
+
     # 1. 检查书籍是否存在
     book = db.query(Book).filter(Book.id == request_in.book_id).first()
 
@@ -150,9 +164,9 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
         logger.warning(
             f"⚠️ [CRUD] 借书请求失败: 书籍不存在 | " f"书籍 ID: {request_in.book_id}"
         )
-        return None
+        raise ValueError("Book not found")
 
-    # 2. 检查用户是否已有未归还记录
+    # 2. 检查用户是否已有未归还记录，并给出具体原因
     existing = (
         db.query(BorrowRecord)
         .filter(
@@ -174,9 +188,25 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
         logger.warning(
             f"⚠️ [CRUD] 借书请求失败: 用户已有该书籍未归还记录 "
             f"| 用户 ID: {user_id} "
-            f"| 书籍: {book.title}"
+            f"| 书籍: {book.title} "
+            f"| 现状态: {existing.status.value}"
         )
-        return None
+        if existing.status == BorrowStatus.RETURN_PENDING:
+            raise ValueError(
+                f'A return request for "{book.title}" is awaiting librarian '
+                "approval. Please wait for the librarian to process it before "
+                "borrowing this book again."
+            )
+        if existing.status == BorrowStatus.PENDING:
+            raise ValueError(
+                f'You already have a pending borrow request for "{book.title}". '
+                "Please wait for librarian approval."
+            )
+        # APPROVED
+        raise ValueError(
+            f'You have already borrowed "{book.title}" and have not returned '
+            "it yet."
+        )
 
     # 3. 解析副本：支持三种入参
     #    - copy_id：数据库主键
@@ -197,7 +227,9 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
                 f"| 副本书籍 ID: {copy.book_id} "
                 f"| 请求书籍 ID: {request_in.book_id}"
             )
-            return None
+            raise ValueError(
+                "The scanned copy does not belong to this book."
+            )
     elif request_in.barcode_number is not None:
         copy = (
             db.query(BookCopy)
@@ -226,7 +258,14 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
             f"| copy_id: {request_in.copy_id} "
             f"| barcode_number: {request_in.barcode_number}"
         )
-        return None
+        if request_in.copy_id is not None or request_in.barcode_number is not None:
+            raise ValueError(
+                "The specified copy was not found for this book."
+            )
+        raise ValueError(
+            f'No available copies of "{book.title}" at the moment. '
+            "You may reserve it instead."
+        )
 
     # 5. 检查副本状态
     if copy.status != CopyStatus.AVAILABLE:
@@ -235,7 +274,13 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
             f"| 副本 ID: {copy.id} "
             f"| 当前状态: {copy.status}"
         )
-        return None
+        status_label = (
+            getattr(copy.status, "value", str(copy.status)) or "unavailable"
+        )
+        raise ValueError(
+            f"Copy #{copy.barcode_number} is currently {status_label} and "
+            "cannot be borrowed."
+        )
 
     # 6. 更新副本状态
     copy.status = CopyStatus.BORROWED
@@ -661,6 +706,97 @@ def reconcile_reservations(db: Session):
         db.commit()
         logger.info(f"🔄 [CRUD] 补偿分配完成 | 自动分配预约数量: {total_assigned}")
     return total_assigned
+
+
+def reconcile_orphan_borrowed_copies(db: Session, book_id: int | None = None) -> int:
+    """检测并修复"孤儿 BORROWED 副本"。
+
+    "孤儿"指：`BookCopy.status == BORROWED`，但数据库里没有任何
+    `APPROVED` / `RETURN_PENDING` / 活跃 `PENDING` 借阅记录指向它。
+
+    这种状态的副本任何用户都借不到（会撞到副本状态校验），同时也不属于
+    任何用户的借阅历史。本函数会把它们恢复为 AVAILABLE，并以"实际可借
+    副本数"重算 `book.available_copies`，避免数据继续漂移。
+
+    出现成因：历史版本的拒绝 / 还书流程没有同步副本状态，或异常中断
+    导致 commit 不完整。
+
+    `book_id` 不传则全库扫描；传了就只修复指定书籍，开销可忽略，所以
+    安全地放进借书入口做轻量自愈。
+    """
+    from app.models.copy import BookCopy, CopyStatus
+
+    active_statuses = [
+        BorrowStatus.PENDING,
+        BorrowStatus.APPROVED,
+        BorrowStatus.RETURN_PENDING,
+    ]
+
+    active_copy_ids_q = (
+        db.query(BorrowRecord.copy_id)
+        .filter(
+            BorrowRecord.copy_id.isnot(None),
+            BorrowRecord.status.in_(active_statuses),
+        )
+    )
+
+    orphan_q = (
+        db.query(BookCopy)
+        .filter(
+            BookCopy.status == CopyStatus.BORROWED,
+            ~BookCopy.id.in_(active_copy_ids_q),
+        )
+    )
+    if book_id is not None:
+        orphan_q = orphan_q.filter(BookCopy.book_id == book_id)
+
+    orphans = orphan_q.all()
+    if not orphans:
+        return 0
+
+    affected_book_ids = {copy.book_id for copy in orphans}
+
+    for copy in orphans:
+        logger.warning(
+            f"🩹 [CRUD] 检测到孤儿 BORROWED 副本，自动修复 | "
+            f"副本 ID: {copy.id} | 副本号: {copy.barcode_number} | "
+            f"所属书籍 ID: {copy.book_id}"
+        )
+        copy.status = CopyStatus.AVAILABLE
+        db.add(copy)
+
+    # 重算受影响书籍的 available_copies，避免之前的漂移继续存在
+    for bid in affected_book_ids:
+        book = (
+            db.query(Book)
+            .filter(Book.id == bid)
+            .with_for_update()
+            .first()
+        )
+        if not book:
+            continue
+        actual_available = (
+            db.query(BookCopy)
+            .filter(
+                BookCopy.book_id == bid,
+                BookCopy.status == CopyStatus.AVAILABLE,
+            )
+            .count()
+        )
+        if book.available_copies != actual_available:
+            logger.warning(
+                f"🩹 [CRUD] 修正 available_copies 漂移 | 书籍 ID: {bid} | "
+                f"原值: {book.available_copies} → 实际可借: {actual_available}"
+            )
+            book.available_copies = actual_available
+            db.add(book)
+
+    db.commit()
+    logger.info(
+        f"✅ [CRUD] 孤儿副本修复完成 | 修复副本数: {len(orphans)} | "
+        f"涉及书籍数: {len(affected_book_ids)}"
+    )
+    return len(orphans)
 
 
 def process_borrow_request(db: Session, record_id: int, process_in: RequestProcess):

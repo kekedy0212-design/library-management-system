@@ -28,12 +28,23 @@ def request_borrow(
         raise HTTPException(status_code=403, detail="Deposit required before borrowing")
 
     logger.info(f"📤 [借书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 请求借书 | 书籍 ID: {request_in.book_id}")
-    
-    record = crud_borrow.create_borrow_request(db, current_user.id, request_in)
+
+    try:
+        record = crud_borrow.create_borrow_request(db, current_user.id, request_in)
+    except ValueError as e:
+        logger.warning(
+            f"❌ [借书请求失败] {str(e)} | 用户: {current_user.username} | "
+            f"书籍 ID: {request_in.book_id}"
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not record:
-        logger.warning(f"❌ [借书请求失败] 书籍不可用或已有待处理请求 | 用户: {current_user.username} | 书籍 ID: {request_in.book_id}")
-        raise HTTPException(status_code=400, detail="Book not available or already requested")
-    
+        logger.warning(
+            f"❌ [借书请求失败] 系统异常导致创建失败 | 用户: {current_user.username} | "
+            f"书籍 ID: {request_in.book_id}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to create borrow request. Please try again.")
+
     logger.info(f"✅ [借书请求成功] 用户 '{current_user.username}' 成功创建借书请求 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
     return record
 
