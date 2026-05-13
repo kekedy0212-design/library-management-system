@@ -255,6 +255,12 @@ const ReturnScannerDialog = ({
                 parsed.copyId
             );
 
+            const currentIsbn =
+                normalizeIsbn(parsed.isbn);
+
+            const currentCopyId =
+                normalizeCopyId(parsed.copyId);
+
             // =========================
             // Realtime duplicate detection
             // =========================
@@ -291,15 +297,39 @@ const ReturnScannerDialog = ({
                         return false;
                     }
 
-                    const recordKey =
-                        buildKey(
-                            record.book.isbn,
-                            record.copy_id
+                    const recordIsbn =
+                        normalizeIsbn(
+                            record.book.isbn
                         );
 
-                    return (
-                        recordKey === key
-                    );
+                    if (
+                        recordIsbn !==
+                        currentIsbn
+                    ) {
+                        return false;
+                    }
+
+                    // Copy-level validation:
+                    // 扫码出来的 `currentCopyId` 是“书内副本号 (barcode_number)”，
+                    // 后端 record.copy_id 是 BookCopy.id（全局主键），两者维度不同。
+                    // 用 record.copy.barcode_number 才是正确的比对维度。
+                    const recordBarcodeNumber =
+                        record.copy?.barcode_number;
+
+                    if (
+                        currentCopyId &&
+                        recordBarcodeNumber != null
+                    ) {
+
+                        return (
+                            normalizeCopyId(
+                                recordBarcodeNumber
+                            ) ===
+                            currentCopyId
+                        );
+                    }
+
+                    return true;
                 });
 
             // =========================
@@ -307,10 +337,33 @@ const ReturnScannerDialog = ({
             // =========================
 
             if (!matchedRecord) {
+                // Try to figure out *why* nothing matched, so the message is actionable
+                const sameIsbnRecords = borrowHistory.filter(record => {
+                    if (!record.book) return false;
+                    return normalizeIsbn(record.book.isbn) === currentIsbn;
+                });
 
-                pushError(
-                    `No active borrowing record found for ISBN ${parsed.isbn}`
-                );
+                let reason;
+                if (sameIsbnRecords.length === 0) {
+                    reason = `You have no record for this book (ISBN ${parsed.isbn}). It is not borrowed by your account.`;
+                } else {
+                    const statuses = Array.from(
+                        new Set(sameIsbnRecords.map(r => r.status))
+                    );
+                    if (statuses.includes('return_pending')) {
+                        reason = `A return request for this book is already submitted and awaiting librarian approval.`;
+                    } else if (statuses.includes('returned')) {
+                        reason = `You already returned this book (ISBN ${parsed.isbn}).`;
+                    } else if (statuses.every(s => s === 'pending' || s === 'rejected')) {
+                        reason = `Your previous borrow request for this book was not approved, so it is not on loan to you.`;
+                    } else if (currentCopyId) {
+                        reason = `You have borrowed this title, but not the specific copy #${currentCopyId}. Scan the copy you actually borrowed.`;
+                    } else {
+                        reason = `No active loan found for ISBN ${parsed.isbn}.`;
+                    }
+                }
+
+                pushError(reason);
 
                 return;
             }
@@ -389,7 +442,7 @@ const ReturnScannerDialog = ({
 
             if (
                 !window.confirm(
-                    `Submit return request for ${scannedRecords.length} book(s)?`
+                    `Submit return request for ${scannedRecords.length} book(s)? A librarian needs to approve them.`
                 )
             ) {
                 return;

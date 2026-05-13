@@ -28,12 +28,23 @@ def request_borrow(
         raise HTTPException(status_code=403, detail="Deposit required before borrowing")
 
     logger.info(f"📤 [借书请求] 用户 '{current_user.username}' (ID: {current_user.id}) 请求借书 | 书籍 ID: {request_in.book_id}")
-    
-    record = crud_borrow.create_borrow_request(db, current_user.id, request_in)
+
+    try:
+        record = crud_borrow.create_borrow_request(db, current_user.id, request_in)
+    except ValueError as e:
+        logger.warning(
+            f"❌ [借书请求失败] {str(e)} | 用户: {current_user.username} | "
+            f"书籍 ID: {request_in.book_id}"
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not record:
-        logger.warning(f"❌ [借书请求失败] 书籍不可用或已有待处理请求 | 用户: {current_user.username} | 书籍 ID: {request_in.book_id}")
-        raise HTTPException(status_code=400, detail="Book not available or already requested")
-    
+        logger.warning(
+            f"❌ [借书请求失败] 系统异常导致创建失败 | 用户: {current_user.username} | "
+            f"书籍 ID: {request_in.book_id}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to create borrow request. Please try again.")
+
     logger.info(f"✅ [借书请求成功] 用户 '{current_user.username}' 成功创建借书请求 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
     return record
 
@@ -43,9 +54,11 @@ def request_return(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """用户直接还书（无需管理员审批）"""
-    logger.info(f"📥 [直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 提交还书 | 借记录 ID: {request_in.borrow_record_id}")
-    
+    """提交还书请求（需要图书管理员审批后才真正归还）"""
+    logger.info(
+        f"📥 [还书申请] 用户 '{current_user.username}' (ID: {current_user.id}) 提交还书申请 | 借记录 ID: {request_in.borrow_record_id}"
+    )
+
     try:
         record = crud_borrow.create_return_request(
             db,
@@ -58,16 +71,22 @@ def request_return(
         )
     except ValueError as e:
         logger.warning(
-            f"❌ [直接还书失败] 一致性校验失败 | 用户: {current_user.username} | "
+            f"❌ [还书申请失败] 一致性校验失败 | 用户: {current_user.username} | "
             f"记录 ID: {request_in.borrow_record_id} | 原因: {str(e)}"
         )
         raise HTTPException(status_code=400, detail=str(e))
 
     if not record:
-        logger.warning(f"❌ [直接还书失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}")
-        raise HTTPException(status_code=400, detail="Invalid borrow record or book not borrowed")
-    
-    logger.info(f"✅ [直接还书成功] 用户 '{current_user.username}' 已归还书籍 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
+        logger.warning(
+            f"❌ [还书申请失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}"
+        )
+        raise HTTPException(
+            status_code=400, detail="Invalid borrow record or book not borrowed"
+        )
+
+    logger.info(
+        f"✅ [还书申请已提交] 用户 '{current_user.username}' 提交还书申请 | 记录 ID: {record.id} | 书籍 ID: {record.book_id} | 等待审批"
+    )
     return record
 
 @router.post("/reserve-requests", response_model=BorrowRecordPublic)
@@ -103,12 +122,12 @@ def request_return_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """用户批量直接还书"""
+    """用户批量提交还书申请（需要图书管理员审批后才真正归还）"""
     if not request_in.borrow_record_ids:
         raise HTTPException(status_code=400, detail="borrow_record_ids cannot be empty")
 
     logger.info(
-        f"📥 [批量直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量还书 | "
+        f"📥 [批量还书申请] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量提交还书申请 | "
         f"数量: {len(request_in.borrow_record_ids)}"
     )
 
@@ -146,7 +165,7 @@ def request_return_batch(
             results.append({
                 "borrow_record_id": record_id,
                 "success": True,
-                "message": "Book returned",
+                "message": "Return request submitted. Awaiting librarian approval.",
                 "record": BorrowRecordPublic.model_validate(record).model_dump()
             })
         else:
@@ -160,8 +179,8 @@ def request_return_batch(
     total = len(request_in.borrow_record_ids)
     failure_count = total - success_count
     logger.info(
-        f"✅ [批量直接还书完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量还书完成 | "
-        f"总数: {total} | 成功: {success_count} | 失败: {failure_count}"
+        f"✅ [批量还书申请完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量提交还书申请完成 | "
+        f"总数: {total} | 成功: {success_count} | 失败: {failure_count} | 等待审批"
     )
     return {
         "total": total,
