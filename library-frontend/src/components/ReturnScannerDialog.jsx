@@ -759,18 +759,6 @@ const ReturnScannerDialog = ({
                                 }}
                             />
                         </div>
-
-                        <div
-                            style={{
-                                marginTop: '12px',
-                                fontSize: '0.82rem',
-
-                                color:
-                                    'var(--md-sys-color-on-surface-variant)',
-                            }}
-                        >
-                            Copy ID is temporarily stored only.
-                        </div>
                     </div>
 
                     {/* RIGHT */}

@@ -1,4 +1,4 @@
-/* 最外层 Portal Root */
+/* --- 布局容器 --- */
 .snackbar-root {
     position: fixed;
     left: 0;
@@ -8,121 +8,119 @@
     display: flex;
     justify-content: center;
     pointer-events: none;
-    /* M3 规范：距离底部通常留出 80px 左右，若有 FAB 则更高 */
-    padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    /* 适配安全区域并留出 M3 推荐的底部间距 */
+    padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
 }
 
-/* snackbar 堆叠 */
 .snackbar-stack {
     width: 100%;
     max-width: 600px;
     display: flex;
     flex-direction: column-reverse;
-    /* 新消息在底部，旧消息上移 */
-    gap: 8px;
+    gap: 12px;
     align-items: center;
 }
 
-/* snackbar 本体 */
+/* --- Snackbar 本体 --- */
 .snackbar {
-    width: fit-content;
-    min-width: 344px;
-    /* M3 标准最小宽度 */
-    max-width: min(560px, calc(100vw - 32px));
-    min-height: 48px;
-    /* M3 标准高度从 48dp 开始 */
-
-    /* M3 关键：Container Shape 是 4px 圆角 */
-    border-radius: 4px;
-
-    padding: 12px 16px;
-    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    min-width: 344px;
+    max-width: min(560px, calc(100vw - 32px));
+    min-height: 48px;
 
-    /* 配色：使用 M3 的 Inverse Surface 颜色 */
-    background-color: --md-sys-color-inverse-surface;
-    /* 典型深灰色 */
-    color: #F4EFF4;
-    /* Inverse On Surface */
+    /* M3 标准：4px 圆角 */
+    border-radius: 4px;
+    padding: 4px 8px 4px 16px;
+    /* 减少右边距因为 icon-button 自带 padding */
+    box-sizing: border-box;
 
-    /* M3 Elevation Level 3 */
-    box-shadow:
-        0px 3px 1px -2px rgba(0, 0, 0, 0.2),
-        0px 2px 2px 0px rgba(0, 0, 0, 0.14),
-        0px 1px 5px 0px rgba(0, 0, 0, 0.12);
+    /* 使用你提供的 Inverse Surface (暗色) */
+    background-color: rgb(224 226 236);
+    color: var(--md-sys-color-inverse-on-surface);
+
+    /* M3 Elevation 3 阴影 */
+    box-shadow: var(--md-sys-color-shadow) 0px 3px 5px -1px,
+        rgba(0, 0, 0, 0.14) 0px 6px 10px 0px,
+        rgba(0, 0, 0, 0.12) 0px 1px 18px 0px;
 
     pointer-events: auto;
-
-    /* M3 动画倾向于使用 Emphasized Decelerate */
-    animation: snackbar-enter 0.4s cubic-bezier(0.05, 0.7, 0.1, 1.0);
     overflow: hidden;
+    position: relative;
+
+    /* 入场动画：Emphasized Decelerate */
+    animation: snackbar-enter 0.4s cubic-bezier(0.05, 0.7, 0.1, 1);
 }
 
-/* --- 状态颜色优化：M3 风格通常不直接改整个背景，但若需要区分，建议使用色条或弱化背景 --- */
-.snackbar.info {
-    border-left: 4px solid --md-sys-color-primary;
-    background-color: #313033;
+/* --- 状态左边框 (使用你提供的变量) --- */
+.snackbar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    /* 稍微加粗以体现 M3 的视觉强调 */
 }
 
-/* 使用 Primary 颜色 */
-.snackbar.success {
-    border-left: 4px solid #B4E197;
-    background-color: #313033;
+.snackbar.info::before {
+    background-color: var(--md-sys-color-primary);
 }
 
-.snackbar.warning {
-    border-left: 4px solid #FFB800;
-    background-color: #313033;
+.snackbar.success::before {
+    background-color: var(--md-sys-color-secondary);
 }
 
-.snackbar.error {
-    border-left: 4px solid #F2B8B5;
-    background-color: #313033;
+/* 或自定义绿色 */
+.snackbar.warning::before {
+    background-color: var(--md-sys-color-tertiary);
 }
 
-/* M3 错误通常保持深色 */
+.snackbar.error::before {
+    background-color: var(--md-sys-color-error);
+}
 
-/* 文本 */
+/* --- 文本样式 --- */
 .snackbar-message {
     flex: 1;
-    font-family: 'Roboto', sans-serif;
+    font-family: 'Roboto', system-ui;
     font-size: 14px;
-    letter-spacing: 0.25px;
+    font-weight: 400;
     line-height: 20px;
+    letter-spacing: 0.25px;
+    padding: 12px 0;
 }
 
-/* Action Button */
-.snackbar md-text-button {
-    /* M3 规范：Action 颜色应为 Primary 色的反转色 */
-    --md-text-button-label-text-color: --md-sys-color-on-primary;
-    margin-left: 8px;
-    flex-shrink: 0;
-    --md-text-button-label-text-size: 14px;
-    font-weight: 500;
-    padding: '10px 20px',
+/* --- 关闭按钮美化 --- */
+.snackbar-close-btn {
+    /* 覆盖 M3 Web 组件默认的紫色 */
+    --md-icon-button-icon-color: var(--md-sys-color-inverse-on-surface);
+    --md-icon-button-hover-state-layer-color: var(--md-sys-color-inverse-on-surface);
+    --md-icon-button-focus-state-layer-color: var(--md-sys-color-inverse-on-surface);
+    --md-icon-button-pressed-state-layer-color: var(--md-sys-color-inverse-on-surface);
+
+    /* 确保图标大小符合 M3 视觉 */
+    --md-icon-button-icon-size: 20px;
 }
 
-/* 动画：向上滑动并淡入 */
+/* --- 动画 --- */
 @keyframes snackbar-enter {
     from {
         opacity: 0;
-        transform: translateY(100%);
+        transform: translateY(24px) scale(0.95);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
     }
 }
 
-/* 手机适配 */
+/* --- 响应式 --- */
 @media (max-width: 600px) {
     .snackbar {
         width: 100%;
-        min-width: unset;
-        margin: 0 8px;
+        min-width: 100%;
     }
 }

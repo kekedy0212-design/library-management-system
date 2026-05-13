@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import BarcodeScanner from './BarcodeScanner';
-import Toast from './Toast';
 import { useBorrow } from '../hooks/useBorrow';
 import { useBooks } from '../hooks/useBooks';
 import { bookService } from '../services/bookService';
@@ -360,12 +359,6 @@ const BorrowScannerDialog = ({
                 padding: '24px',
             }}
         >
-            <Toast
-                visible={toast.visible}
-                type={toast.type}
-                text={toast.text}
-                onClose={() => setToast((prev) => ({ ...prev, visible: false }))}
-            />
             <div
                 style={{
                     width: '100%',
@@ -521,18 +514,6 @@ const BorrowScannerDialog = ({
                                     setErrors(prev => [msg, ...prev]);
                                 }}
                             />
-                        </div>
-
-                        <div
-                            style={{
-                                marginTop: '12px',
-                                fontSize: '0.82rem',
-
-                                color:
-                                    'var(--md-sys-color-on-surface-variant)',
-                            }}
-                        >
-                            Copy ID is temporarily stored only.
                         </div>
                     </div>
 

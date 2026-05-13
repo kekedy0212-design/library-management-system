@@ -29,10 +29,7 @@ const BookDetail = () => {
     height: 110,
     fontSize: 18,
     textMargin: 15,
-    // 关键：JsBarcode 的 width 是“最窄模块宽度（px）”。
-    // 设成 2 时，长内容 CODE128 的最窄条只有 ~1.5px，扫码识别率极低。
-    // 至少给 3，更稳的话 4。
-    width: 4
+    width: 2
   });
 
   const handleSettingChange = (key, value) => {
