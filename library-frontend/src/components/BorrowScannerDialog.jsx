@@ -1,21 +1,31 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import BarcodeScanner from './BarcodeScanner';
 import Toast from './Toast';
 import { useBorrow } from '../hooks/useBorrow';
 import { useBooks } from '../hooks/useBooks';
 import { bookService } from '../services/bookService';
+import {
+    useSnackbar
+} from './feedback/SnackbarProvider';
 
 const parseBarcode = (text) => {
+
     if (!text) {
-        throw new Error('Empty barcode');
+        return null;
     }
 
-    const parts = text.split('/');
+    const cleaned = String(text).trim();
 
+    // 忽略纯数字中间态
+    if (/^\d+$/.test(cleaned)) {
+        return null;
+    }
+
+    const parts = cleaned.split('/');
+
+    // 不是目标格式
     if (parts.length !== 2) {
-        throw new Error(
-            `Invalid barcode format. Expected ISBN/COPY_ID but got "${text}"`
-        );
+        return null;
     }
 
     const isbn = parts[0]?.trim();
@@ -23,20 +33,16 @@ const parseBarcode = (text) => {
     const copyText = parts[1]?.trim();
 
     if (!isbn) {
-        throw new Error(`ISBN missing in "${text}"`);
+        return null;
     }
 
     if (!/^\d+$/.test(copyText)) {
-        throw new Error(
-            `Copy ID must be a positive integer (got "${copyText}")`
-        );
+        return null;
     }
 
     return {
-        raw: text,
-
+        raw: cleaned,
         isbn,
-
         copyId: Number(copyText),
     };
 };
@@ -54,65 +60,166 @@ const BorrowScannerDialog = ({
     const [toast, setToast] = useState({ visible: false, type: 'info', text: '' });
 
     const [scannerKey, setScannerKey] = useState(0);
+
+    const { showSnackbar } = useSnackbar();
+
     useEffect(() => {
         if (open) {
             setScannerKey(prev => prev + 1);
         }
     }, [open]);
+    const scannedIsbnRef = useRef(new Set());
 
     const handleDetected = async (rawText) => {
-        // 辅助函数：标准化 ISBN
-        const normalizeIsbn = (isbn) => String(isbn || '').replace(/[- \s]/g, '').trim();
+
+        const normalizeIsbn = (isbn) =>
+            String(isbn || '')
+                .replace(/[-\s]/g, '')
+                .trim();
 
         try {
-            const parsed = parseBarcode(rawText);
-            const currentNormalizedIsbn = normalizeIsbn(parsed.isbn);
 
-            // --- 核心修改：检查 state 中是否已存在该 ISBN ---
-            // 注意：要同时检查 item 本身和 item.book 里的 isbn
-            const isDuplicate = scannedBooks.some(item => {
-                const existingIsbn = item.isbn || item.book?.isbn;
-                return normalizeIsbn(existingIsbn) === currentNormalizedIsbn;
+            // 解析条码
+            const parsed = parseBarcode(rawText);
+            if (!parsed) {
+                return;
+            }
+
+            if (!parsed?.isbn) {
+
+                showSnackbar(
+                    'Invalid barcode detected.',
+                    'error'
+                );
+
+                return;
+            }
+
+            const currentNormalizedIsbn =
+                normalizeIsbn(parsed.isbn);
+
+            // =========
+            // 实时同步去重
+            // 不依赖 React state
+            // =========
+            if (
+                scannedIsbnRef.current.has(
+                    currentNormalizedIsbn
+                )
+            ) {
+
+                showSnackbar(
+                    'This book has already been scanned.',
+                    'warning'
+                );
+
+                return;
+            }
+
+            // 查询图书
+            const response = await bookService.getBooks({
+                search: parsed.isbn
             });
 
-            if (isDuplicate) {
-                console.warn("Duplicate ISBN detected, ignoring:", currentNormalizedIsbn);
-                return; // 发现重复，直接退出，不执行后续逻辑
-            }
-
-            // 调用接口获取书籍详情
-            const response = await bookService.getBooks({ search: parsed.isbn });
             const matchedBooks = response.data || [];
-            const matchedBook = matchedBooks.find(b => normalizeIsbn(b.isbn) === currentNormalizedIsbn);
 
+            const matchedBook = matchedBooks.find(
+                book =>
+                    normalizeIsbn(book.isbn) ===
+                    currentNormalizedIsbn
+            );
+
+            // 未找到图书
             if (!matchedBook) {
-                throw new Error(`未找到 ISBN 匹配的书籍: ${parsed.isbn}`);
+
+                showSnackbar(
+                    'No matching book found.',
+                    'error'
+                );
+
+                return;
             }
 
+            // =========
+            // 关键：
+            // 立即写入 ref
+            // 防止 camera 高频重复触发
+            // =========
+            scannedIsbnRef.current.add(
+                currentNormalizedIsbn
+            );
+
+            // 震动反馈
             navigator.vibrate?.(80);
 
-            // 写入 State
-            setScannedBooks(prev => {
-                const newList = [...prev, { ...parsed, book: matchedBook }];
+            // 更新 UI
+            setScannedBooks(prev => [
 
-                // 根据 ISBN 去重
-                const map = new Map();
-                return newList.filter(item => {
-                    const id = normalizeIsbn(item.isbn || item.book?.isbn);
-                    return map.has(id) ? false : map.set(id, true);
-                });
-            });
+                ...prev,
+
+                {
+                    ...parsed,
+                    book: matchedBook
+                }
+            ]);
+
+            // 成功提示
+            showSnackbar(
+                `"${matchedBook.title}" added successfully.`,
+                'success'
+            );
 
         } catch (err) {
+
             console.error(err);
-            setErrors(prev => [err.message || '扫码失败', ...prev]);
+
+            const msg =
+                err?.response?.data?.detail ||
+                err?.message ||
+                'Scan failed';
+
+            showSnackbar(msg, 'error');
         }
     };
+    const normalizeIsbn = (isbn) =>
+        String(isbn || '')
+            .replace(/[-\s]/g, '')
+            .trim();
 
+    const handleRemoveBook = (itemToRemove) => {
+
+        const normalizedIsbn = normalizeIsbn(
+            itemToRemove?.isbn ||
+            itemToRemove?.book?.isbn
+        );
+
+        // 删除 ref 中的 isbn
+        scannedIsbnRef.current.delete(
+            normalizedIsbn
+        );
+
+        // 删除 UI
+        setScannedBooks(prev =>
+            prev.filter(item => {
+
+                const existingIsbn =
+                    normalizeIsbn(
+                        item?.isbn ||
+                        item?.book?.isbn
+                    );
+
+                return (
+                    existingIsbn !== normalizedIsbn
+                );
+            })
+        );
+
+        showSnackbar(
+            'Book removed from list.',
+            'info'
+        );
+    };
     const handleBorrowAll = async () => {
-        if (!scannedBooks.length) {
-            return;
-        }
 
         setBorrowing(true);
 
@@ -128,27 +235,46 @@ const BorrowScannerDialog = ({
                     book_id: parseInt(item.book.id, 10),
                     barcode_number: parseInt(item.copyId, 10),
                 };
+
                 await borrowBook(payload);
 
                 succeeded.push(item.raw);
 
+                showSnackbar(
+                    `"${item.book.title}" borrow request submitted.`,
+                    'success'
+                );
+
             } catch (err) {
 
-                // 提取具体的错误信息
-                // 后端的 detail 可能是数组（如你提供的报错），也可能是字符串
                 let errorMsg = 'Borrow failed';
-                const detail = err.response?.data?.detail;
+
+                const detail =
+                    err.response?.data?.detail;
 
                 if (Array.isArray(detail)) {
-                    errorMsg = detail[0]?.msg || errorMsg;
+
+                    errorMsg =
+                        detail[0]?.msg || errorMsg;
+
                 } else if (typeof detail === 'string') {
+
                     errorMsg = detail;
+
                 } else {
-                    errorMsg = err.message || errorMsg;
+
+                    errorMsg =
+                        err.message || errorMsg;
                 }
 
-                failed.push(`${item.book.title}: ${errorMsg}`);
-                setErrors([`${item.book.title}: ${errorMsg}`]);
+                const finalMsg =
+                    `${item.book.title}: ${errorMsg}`;
+
+                failed.push(finalMsg);
+
+                // setErrors([finalMsg]);
+
+                showSnackbar(finalMsg, 'error');
             }
         }
 
@@ -178,6 +304,29 @@ const BorrowScannerDialog = ({
         }
 
         setBorrowing(false);
+
+        // 总结提示
+        if (failed.length === 0) {
+
+            showSnackbar(
+                'All borrow requests submitted successfully.',
+                'success'
+            );
+
+        } else if (succeeded.length === 0) {
+
+            showSnackbar(
+                'All borrow requests failed.',
+                'error'
+            );
+
+        } else {
+
+            showSnackbar(
+                `${succeeded.length} succeeded, ${failed.length} failed.`,
+                'warning'
+            );
+        }
     };
 
     const clearErrors = () => {
@@ -530,11 +679,7 @@ const BorrowScannerDialog = ({
 
                                         <button
                                             onClick={() => {
-                                                setScannedBooks(prev =>
-                                                    prev.filter(
-                                                        (_, i) => i !== index
-                                                    )
-                                                );
+                                                handleRemoveBook(item);
                                             }}
                                             style={{
                                                 border: 'none',
@@ -646,8 +791,11 @@ const BorrowScannerDialog = ({
                 >
                     <button
                         onClick={() => {
+                            scannedIsbnRef.current.clear();
+
                             setScannedBooks([]);
-                            setErrors([]);
+
+                            onClose?.();
                         }}
                         disabled={!scannedBooks.length}
                         style={{

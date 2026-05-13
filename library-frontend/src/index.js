@@ -5,13 +5,18 @@ import { BrowserRouter } from 'react-router-dom';
 import store from './store';
 import App from './App';
 import './styles/index.css';
+import {
+  SnackbarProvider
+} from './components/feedback/SnackbarProvider';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <Provider store={store}>
       <BrowserRouter>
-        <App />
+        <SnackbarProvider>
+          <App />
+        </SnackbarProvider>
       </BrowserRouter>
     </Provider>
   </React.StrictMode>

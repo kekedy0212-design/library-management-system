@@ -6,39 +6,47 @@ import React, {
 import BarcodeScanner from './BarcodeScanner';
 import MdCard from './MdCard';
 import { borrowService } from '../services/borrowService';
+import {
+    useSnackbar
+} from './feedback/SnackbarProvider';
 
 const parseBarcode = (text) => {
+
     if (!text) {
-        throw new Error('Empty barcode');
+        return null;
     }
 
-    const parts = text.split('/');
+    const cleaned =
+        String(text).trim();
+
+    // 忽略纯数字中间态
+    if (/^\d+$/.test(cleaned)) {
+        return null;
+    }
+
+    const parts = cleaned.split('/');
 
     if (parts.length !== 2) {
-        throw new Error(
-            `Invalid barcode format. Expected ISBN/COPY_ID but got "${text}"`
-        );
+        return null;
     }
 
-    const isbn = parts[0]?.trim();
+    const isbn =
+        parts[0]?.trim();
 
-    const copyText = parts[1]?.trim();
+    const copyText =
+        parts[1]?.trim();
 
     if (!isbn) {
-        throw new Error(`ISBN missing in "${text}"`);
+        return null;
     }
 
     if (!/^\d+$/.test(copyText)) {
-        throw new Error(
-            `Copy ID must be a positive integer (got "${copyText}")`
-        );
+        return null;
     }
 
     return {
-        raw: text,
-
+        raw: cleaned,
         isbn,
-
         copyId: Number(copyText),
     };
 };
@@ -49,118 +57,235 @@ const ReturnScannerDialog = ({
     borrowHistory = [],
     onSuccess,
 }) => {
-    const [scannedRecords, setScannedRecords] = useState([]);
-    const [errors, setErrors] = useState([]);
-    const [processing, setProcessing] = useState(false);
+    const { showSnackbar } = useSnackbar();
 
-    const scanningLockRef = useRef(false);
+    const [scannedRecords, setScannedRecords] =
+        useState([]);
 
-    if (!open) {
-        return null;
-    }
+    const [errors, setErrors] =
+        useState([]);
 
-    const handleDetected = async (rawText) => {
+    const [processing, setProcessing] =
+        useState(false);
 
-        // =========================
-        // Prevent scanner storm
-        // =========================
+    // =========================
+    // Scanner cooldown
+    // =========================
 
-        if (scanningLockRef.current) {
+    const scanningLockRef =
+        useRef(false);
+
+    // =========================
+    // Realtime dedupe
+    // key = isbn_copyId
+    // =========================
+
+    const scannedMapRef =
+        useRef(new Map());
+
+    // =========================
+    // Prevent repeated error spam
+    // =========================
+
+    const lastErrorRef =
+        useRef({
+            message: '',
+            time: 0,
+        });
+
+    // =========================
+    // Helpers
+    // =========================
+
+    const normalizeIsbn = (isbn) =>
+        String(isbn || '')
+            .replace(/[-\s]/g, '')
+            .trim();
+
+    const normalizeCopyId = (copyId) =>
+        String(copyId || '')
+            .trim();
+
+    const buildKey = (
+        isbn,
+        copyId
+    ) => {
+
+        return `${normalizeIsbn(isbn)}_${normalizeCopyId(copyId)}`;
+    };
+
+    // =========================
+    // Snackbar-safe error
+    // =========================
+
+    const pushError = (message) => {
+
+        const now = Date.now();
+
+        // prevent repeated spam
+        if (
+            lastErrorRef.current.message === message &&
+            now - lastErrorRef.current.time < 2000
+        ) {
             return;
         }
 
-        scanningLockRef.current = true;
+        lastErrorRef.current = {
+            message,
+            time: now,
+        };
 
-        // =========================
-        // Helpers
-        // =========================
+        setErrors(prev => {
 
-        const normalizeIsbn = (isbn) =>
-            String(isbn || '')
-                .replace(/[-\s]/g, '')
-                .trim();
+            if (prev[0] === message) {
+                return prev;
+            }
 
-        const normalizeCopyId = (copyId) =>
-            String(copyId || '')
-                .trim();
+            return [
+                message,
+                ...prev,
+            ];
+        });
+
+        showSnackbar(
+            message,
+            'error'
+        );
+    };
+
+    // =========================
+    // Remove single record
+    // =========================
+
+    const handleRemoveRecord = (
+        item
+    ) => {
+
+        const key = buildKey(
+            item.isbn,
+            item.copyId
+        );
+
+        scannedMapRef.current.delete(
+            key
+        );
+
+        setScannedRecords(prev =>
+            prev.filter(record => {
+
+                const recordKey =
+                    buildKey(
+                        record.isbn,
+                        record.copyId
+                    );
+
+                return (
+                    recordKey !== key
+                );
+            })
+        );
+
+        showSnackbar(
+            'Book removed from return list.',
+            'info'
+        );
+    };
+
+    // =========================
+    // Clear all
+    // =========================
+
+    const handleClearAll = () => {
+
+        scannedMapRef.current.clear();
+
+        setScannedRecords([]);
+
+        showSnackbar(
+            'Return list cleared.',
+            'info'
+        );
+    };
+
+    // =========================
+    // Close dialog
+    // =========================
+
+    const handleCloseDialog = () => {
+
+        scannedMapRef.current.clear();
+
+        setScannedRecords([]);
+
+        setErrors([]);
+
+        onClose?.();
+    };
+
+    // =========================
+    // Scanner handler
+    // =========================
+
+    const handleDetected = async (
+        rawText
+    ) => {
+
+        // prevent scanner storm
+        if (
+            scanningLockRef.current
+        ) {
+            return;
+        }
+
+        scanningLockRef.current =
+            true;
 
         try {
 
-            // =========================
-            // Parse barcode
-            // =========================
-
             const parsed =
                 parseBarcode(rawText);
+
+            // ignore invalid intermediate scan
+            if (!parsed) {
+                return;
+            }
+
+            const key = buildKey(
+                parsed.isbn,
+                parsed.copyId
+            );
 
             const currentIsbn =
                 normalizeIsbn(parsed.isbn);
 
             const currentCopyId =
-                normalizeCopyId(
-                    parsed.copyId
-                );
+                normalizeCopyId(parsed.copyId);
 
             // =========================
-            // Prevent duplicate scans
+            // Realtime duplicate detection
             // =========================
 
-            const isDuplicate =
-                scannedRecords.some(item => {
+            if (
+                scannedMapRef.current.has(
+                    key
+                )
+            ) {
 
-                    const existingIsbn =
-                        normalizeIsbn(
-                            item.isbn ||
-                            item.record?.book?.isbn
-                        );
-
-                    const existingCopyId =
-                        normalizeCopyId(
-                            item.copyId ||
-                            item.record?.copy?.barcode_number
-                        );
-
-                    // same isbn + same copy
-                    if (
-                        existingIsbn ===
-                        currentIsbn
-                    ) {
-
-                        // if either side has no copyId
-                        // treat as duplicate
-                        if (
-                            !existingCopyId ||
-                            !currentCopyId
-                        ) {
-                            return true;
-                        }
-
-                        return (
-                            existingCopyId ===
-                            currentCopyId
-                        );
-                    }
-
-                    return false;
-                });
-
-            if (isDuplicate) {
-
-                console.warn(
-                    'Duplicate book/copy detected'
+                showSnackbar(
+                    'This book has already been scanned.',
+                    'warning'
                 );
 
                 return;
             }
 
             // =========================
-            // Find active borrow record
+            // Find borrow record
             // =========================
 
             const matchedRecord =
                 borrowHistory.find(record => {
 
-                    // approved only
                     if (
                         record.status !==
                         'approved'
@@ -208,7 +333,7 @@ const ReturnScannerDialog = ({
                 });
 
             // =========================
-            // No matching borrow record
+            // No record found
             // =========================
 
             if (!matchedRecord) {
@@ -238,57 +363,41 @@ const ReturnScannerDialog = ({
                     }
                 }
 
-                throw new Error(reason);
+                pushError(reason);
+
+                return;
             }
+
+            // =========================
+            // Realtime cache
+            // IMPORTANT
+            // =========================
+
+            scannedMapRef.current.set(
+                key,
+                true
+            );
 
             navigator.vibrate?.(80);
 
             // =========================
-            // Functional state update
+            // Update UI
             // =========================
 
-            setScannedRecords(prev => {
+            setScannedRecords(prev => [
 
-                const nextList = [
-                    ...prev,
-                    {
-                        ...parsed,
-                        record: matchedRecord,
-                    }
-                ];
+                ...prev,
 
-                // =========================
-                // Deduplicate
-                // =========================
+                {
+                    ...parsed,
+                    record: matchedRecord,
+                }
+            ]);
 
-                const map = new Map();
-
-                return nextList.filter(item => {
-
-                    const isbn =
-                        normalizeIsbn(
-                            item.isbn ||
-                            item.record?.book?.isbn
-                        );
-
-                    const copyId =
-                        normalizeCopyId(
-                            item.copyId ||
-                            item.record?.copy?.barcode_number
-                        );
-
-                    const key =
-                        `${isbn}_${copyId}`;
-
-                    if (map.has(key)) {
-                        return false;
-                    }
-
-                    map.set(key, true);
-
-                    return true;
-                });
-            });
+            showSnackbar(
+                `"${matchedRecord.book?.title}" added successfully.`,
+                'success'
+            );
 
         } catch (err) {
 
@@ -299,103 +408,192 @@ const ReturnScannerDialog = ({
                 err?.message ||
                 'Scan failed';
 
-            // prevent duplicate error spam
-            setErrors(prev => {
-
-                if (prev[0] === message) {
-                    return prev;
-                }
-
-                return [
-                    message,
-                    ...prev,
-                ];
-            });
+            pushError(message);
 
         } finally {
-
-            // =========================
-            // Cooldown
-            // =========================
 
             setTimeout(() => {
 
                 scanningLockRef.current =
                     false;
 
-            }, 1200);
+            }, 1000);
         }
     };
 
-    const handleReturnAll = async () => {
-        if (!scannedRecords.length) {
-            return;
-        }
+    // =========================
+    // Submit all returns
+    // =========================
 
-        if (
-            !window.confirm(
-                `Submit return request for ${scannedRecords.length} book(s)? A librarian needs to approve them.`
-            )
-        ) {
-            return;
-        }
+    const handleReturnAll =
+        async () => {
 
-        setProcessing(true);
+            if (
+                !scannedRecords.length
+            ) {
 
-        const successIds = [];
-        const failedMessages = [];
-
-        for (const item of scannedRecords) {
-            try {
-                await borrowService.returnRequest(
-                    item.record.id,
-                    {
-                        barcode: item.raw,
-                        barcode_number: parseInt(item.copyId, 10),
-                        isbn: item.isbn,
-                    }
+                showSnackbar(
+                    'No books available for return.',
+                    'warning'
                 );
 
-                successIds.push(item.record.id);
+                return;
+            }
 
-            } catch (err) {
-                failedMessages.push(
-                    `${item.record.book?.title}: ${err.response?.data?.detail ||
-                    err.message ||
-                    'Return failed'
-                    }`
+            if (
+                !window.confirm(
+                    `Submit return request for ${scannedRecords.length} book(s)? A librarian needs to approve them.`
+                )
+            ) {
+                return;
+            }
+
+            setProcessing(true);
+
+            showSnackbar(
+                'Submitting return requests...',
+                'info'
+            );
+
+            const successIds = [];
+
+            const failedMessages = [];
+
+            for (const item of scannedRecords) {
+
+                try {
+
+                    await borrowService
+                        .returnRequest(
+                            item.record.id,
+                            {
+                                barcode:
+                                    item.raw,
+
+                                barcode_number:
+                                    parseInt(
+                                        item.copyId,
+                                        10
+                                    ),
+
+                                isbn:
+                                    item.isbn,
+                            }
+                        );
+
+                    successIds.push(
+                        item.record.id
+                    );
+
+                    showSnackbar(
+                        `"${item.record.book?.title}" return request submitted.`,
+                        'success'
+                    );
+
+                } catch (err) {
+
+                    const message =
+                        err?.response?.data?.detail ||
+                        err?.message ||
+                        'Return failed';
+
+                    failedMessages.push(
+                        `${item.record.book?.title}: ${message}`
+                    );
+
+                    pushError(
+                        `${item.record.book?.title}: ${message}`
+                    );
+                }
+            }
+
+            // =========================
+            // Remove successful records
+            // =========================
+
+            if (
+                successIds.length > 0
+            ) {
+
+                setScannedRecords(prev =>
+                    prev.filter(item => {
+
+                        const shouldKeep =
+                            !successIds.includes(
+                                item.record.id
+                            );
+
+                        // sync ref
+                        if (!shouldKeep) {
+
+                            const key =
+                                buildKey(
+                                    item.isbn,
+                                    item.copyId
+                                );
+
+                            scannedMapRef.current.delete(
+                                key
+                            );
+                        }
+
+                        return shouldKeep;
+                    })
+                );
+
+                onSuccess?.();
+            }
+
+            // =========================
+            // Final summary
+            // =========================
+
+            if (
+                failedMessages.length === 0
+            ) {
+
+                showSnackbar(
+                    'All return requests submitted successfully.',
+                    'success'
+                );
+
+            } else if (
+                successIds.length === 0
+            ) {
+
+                showSnackbar(
+                    'All return requests failed.',
+                    'error'
+                );
+
+            } else {
+
+                showSnackbar(
+                    `${successIds.length} succeeded, ${failedMessages.length} failed.`,
+                    'warning'
                 );
             }
-        }
 
-        if (successIds.length > 0) {
-            setScannedRecords(prev =>
-                prev.filter(
-                    item =>
-                        !successIds.includes(item.record.id)
-                )
-            );
+            setProcessing(false);
+        };
 
-            alert(
-                `${successIds.length} return request(s) submitted. Awaiting librarian approval.`
-            );
-
-            onSuccess?.();
-        }
-
-        if (failedMessages.length > 0) {
-            setErrors(prev => [
-                ...failedMessages,
-                ...prev,
-            ]);
-        }
-
-        setProcessing(false);
-    };
+    // =========================
+    // Clear errors
+    // =========================
 
     const clearErrors = () => {
+
         setErrors([]);
+
+        showSnackbar(
+            'Errors cleared.',
+            'info'
+        );
     };
+
+    if (!open) {
+        return null;
+    }
 
     return (
         <div
@@ -726,13 +924,7 @@ const ReturnScannerDialog = ({
 
                                         <button
                                             onClick={() => {
-                                                setScannedRecords(
-                                                    prev =>
-                                                        prev.filter(
-                                                            (_, i) =>
-                                                                i !== index
-                                                        )
-                                                );
+                                                handleRemoveRecord(item);
                                             }}
                                             style={removeButtonStyle}
                                         >
@@ -834,8 +1026,7 @@ const ReturnScannerDialog = ({
                 >
                     <button
                         onClick={() => {
-                            setScannedRecords([]);
-                            setErrors([]);
+                            handleClearAll();
                         }}
                         disabled={!scannedRecords.length}
                         style={footerButtonStyle}
