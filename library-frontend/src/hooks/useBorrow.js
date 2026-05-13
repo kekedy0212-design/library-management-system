@@ -27,7 +27,7 @@ export const useBorrow = () => {
   ) => {
     try {
       const response =
-        await borrowService.borrowRequest(payload);
+        await borrowService.borrowRequest(payload.book_id, payload.copy_id, payload.requested_due_date);
 
       dispatch(addBorrowRequest(response.data));
 

@@ -7,12 +7,6 @@ import BarcodeScanner from './BarcodeScanner';
 import MdCard from './MdCard';
 import { borrowService } from '../services/borrowService';
 
-const normalizeIsbn = (isbn) =>
-    String(isbn || '')
-        .replace(/-/g, '')
-        .replace(/\s/g, '')
-        .trim();
-
 const parseBarcode = (text) => {
     if (!text) {
         throw new Error('Empty barcode');
@@ -27,13 +21,14 @@ const parseBarcode = (text) => {
     }
 
     const isbn = parts[0]?.trim();
-    const copyCode = parts[1]?.trim();
+
+    const copyText = parts[1]?.trim();
 
     if (!isbn) {
         throw new Error('ISBN missing');
     }
 
-    if (!/^\d+$/.test(copyCode)) {
+    if (!/^\d+$/.test(copyText)) {
         throw new Error(
             'Copy ID must be a positive integer'
         );
@@ -41,8 +36,10 @@ const parseBarcode = (text) => {
 
     return {
         raw: text,
+
         isbn,
-        copyCode,
+
+        copyId: Number(copyText),
     };
 };
 
@@ -64,64 +61,110 @@ const ReturnScannerDialog = ({
 
     const handleDetected = async (rawText) => {
 
-        // prevent scanner storm
+        // =========================
+        // Prevent scanner storm
+        // =========================
+
         if (scanningLockRef.current) {
             return;
         }
 
         scanningLockRef.current = true;
 
+        // =========================
+        // Helpers
+        // =========================
+
+        const normalizeIsbn = (isbn) =>
+            String(isbn || '')
+                .replace(/[-\s]/g, '')
+                .trim();
+
+        const normalizeCopyId = (copyId) =>
+            String(copyId || '')
+                .trim();
+
         try {
 
-            const parsed = parseBarcode(rawText);
-
-            const normalize = (value) =>
-                String(value || '')
-                    .replace(/-/g, '')
-                    .replace(/\s/g, '')
-                    .trim();
-
             // =========================
-            // Prevent exact duplicate
+            // Parse barcode
             // =========================
 
-            const duplicatedBarcode =
-                scannedRecords.some(
-                    item =>
-                        normalize(item.raw) ===
-                        normalize(parsed.raw)
+            const parsed =
+                parseBarcode(rawText);
+
+            const currentIsbn =
+                normalizeIsbn(parsed.isbn);
+
+            const currentCopyId =
+                normalizeCopyId(
+                    parsed.copyId
                 );
 
-            if (duplicatedBarcode) {
+            // =========================
+            // Prevent duplicate scans
+            // =========================
+
+            const isDuplicate =
+                scannedRecords.some(item => {
+
+                    const existingIsbn =
+                        normalizeIsbn(
+                            item.isbn ||
+                            item.record?.book?.isbn
+                        );
+
+                    const existingCopyId =
+                        normalizeCopyId(
+                            item.copyId ||
+                            item.record?.copy_id
+                        );
+
+                    // same isbn + same copy
+                    if (
+                        existingIsbn ===
+                        currentIsbn
+                    ) {
+
+                        // if either side has no copyId
+                        // treat as duplicate
+                        if (
+                            !existingCopyId ||
+                            !currentCopyId
+                        ) {
+                            return true;
+                        }
+
+                        return (
+                            existingCopyId ===
+                            currentCopyId
+                        );
+                    }
+
+                    return false;
+                });
+
+            if (isDuplicate) {
+
+                console.warn(
+                    'Duplicate book/copy detected'
+                );
+
                 return;
             }
 
             // =========================
-            // Prevent same ISBN
-            // =========================
-
-            const duplicatedBook =
-                scannedRecords.some(
-                    item =>
-                        normalize(item.isbn) ===
-                        normalize(parsed.isbn)
-                );
-
-            if (duplicatedBook) {
-
-                throw new Error(
-                    'Another copy of this book is already scanned'
-                );
-            }
-
-            // =========================
-            // Find matching borrow record
+            // Find active borrow record
             // =========================
 
             const matchedRecord =
                 borrowHistory.find(record => {
 
-                    if (record.status !== 'approved') {
+                    // approved only
+                    if (
+                        record.status !==
+                        'approved'
+                    ) {
                         return false;
                     }
 
@@ -129,27 +172,38 @@ const ReturnScannerDialog = ({
                         return false;
                     }
 
-                    const isbnMatched =
-                        normalize(record.book.isbn) ===
-                        normalize(parsed.isbn);
+                    const recordIsbn =
+                        normalizeIsbn(
+                            record.book.isbn
+                        );
 
-                    if (!isbnMatched) {
+                    if (
+                        recordIsbn !==
+                        currentIsbn
+                    ) {
                         return false;
                     }
 
                     // copy-level validation
                     if (
-                        parsed.copyId &&
+                        currentCopyId &&
                         record.copy_id
                     ) {
+
                         return (
-                            Number(record.copy_id) ===
-                            Number(parsed.copyId)
+                            normalizeCopyId(
+                                record.copy_id
+                            ) ===
+                            currentCopyId
                         );
                     }
 
                     return true;
                 });
+
+            // =========================
+            // No matching borrow record
+            // =========================
 
             if (!matchedRecord) {
 
@@ -160,29 +214,51 @@ const ReturnScannerDialog = ({
 
             navigator.vibrate?.(80);
 
-            // IMPORTANT:
-            // functional update
+            // =========================
+            // Functional state update
+            // =========================
+
             setScannedRecords(prev => {
 
-                // double check latest state
-                const exists =
-                    prev.some(
-                        item =>
-                            normalize(item.isbn) ===
-                            normalize(parsed.isbn)
-                    );
-
-                if (exists) {
-                    return prev;
-                }
-
-                return [
+                const nextList = [
                     ...prev,
                     {
                         ...parsed,
                         record: matchedRecord,
                     }
                 ];
+
+                // =========================
+                // Deduplicate
+                // =========================
+
+                const map = new Map();
+
+                return nextList.filter(item => {
+
+                    const isbn =
+                        normalizeIsbn(
+                            item.isbn ||
+                            item.record?.book?.isbn
+                        );
+
+                    const copyId =
+                        normalizeCopyId(
+                            item.copyId ||
+                            item.record?.copy_id
+                        );
+
+                    const key =
+                        `${isbn}_${copyId}`;
+
+                    if (map.has(key)) {
+                        return false;
+                    }
+
+                    map.set(key, true);
+
+                    return true;
+                });
             });
 
         } catch (err) {
@@ -194,16 +270,30 @@ const ReturnScannerDialog = ({
                 err?.message ||
                 'Scan failed';
 
-            setErrors(prev => [
-                message,
-                ...prev,
-            ]);
+            // prevent duplicate error spam
+            setErrors(prev => {
+
+                if (prev[0] === message) {
+                    return prev;
+                }
+
+                return [
+                    message,
+                    ...prev,
+                ];
+            });
 
         } finally {
 
-            // cooldown
+            // =========================
+            // Cooldown
+            // =========================
+
             setTimeout(() => {
-                scanningLockRef.current = false;
+
+                scanningLockRef.current =
+                    false;
+
             }, 1200);
         }
     };
@@ -232,7 +322,7 @@ const ReturnScannerDialog = ({
                     item.record.id,
                     {
                         barcode: item.raw,
-                        barcode_number: parseInt(item.copyCode, 10),
+                        barcode_number: parseInt(item.copyId, 10),
                         isbn: item.isbn,
                     }
                 );

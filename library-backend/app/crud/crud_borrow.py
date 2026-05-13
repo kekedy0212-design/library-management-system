@@ -38,25 +38,30 @@ def _not_renew_request_filter():
     """过滤掉续借请求记录（__RENEW__），避免被当作真实在借记录。"""
     return or_(
         BorrowRecord.librarian_notes.is_(None),
-        ~BorrowRecord.librarian_notes.like(f"{RENEW_NOTE_PREFIX}%")
+        ~BorrowRecord.librarian_notes.like(f"{RENEW_NOTE_PREFIX}%"),
     )
+
 
 def get_borrow_record(db: Session, record_id: int):
     result = db.query(BorrowRecord).filter(BorrowRecord.id == record_id).first()
     if result:
-        logger.debug(f"📚 [CRUD] 获取借记录: ID: {record_id} | 状态: {result.status.value}")
+        logger.debug(
+            f"📚 [CRUD] 获取借记录: ID: {record_id} | 状态: {result.status.value}"
+        )
     return result
+
 
 def get_pending_requests(db: Session):
     # 兼容旧流程：把历史 RETURN_PENDING 数据补偿为已归还，避免卡在管理员待处理中
     reconcile_legacy_return_pending(db)
     # 补偿机制：先尝试把可分配的预约自动分配，避免“有库存但仍是pending”的历史遗留状态
     reconcile_reservations(db)
-    results = db.query(BorrowRecord).filter(
-        BorrowRecord.status == BorrowStatus.PENDING
-    ).all()
+    results = (
+        db.query(BorrowRecord).filter(BorrowRecord.status == BorrowStatus.PENDING).all()
+    )
     logger.debug(f"📋 [CRUD] 查询待处理请求 | 待处理数: {len(results)}")
     return results
+
 
 def get_user_borrow_history(db: Session, user_id: int):
     # 兼容旧流程：先把历史 RETURN_PENDING 数据补偿为已归还，保证读者看到真实状态
@@ -64,7 +69,9 @@ def get_user_borrow_history(db: Session, user_id: int):
     # 补偿机制：查询前先自动分配预约队列，保证读者看到的是最新状态
     reconcile_reservations(db)
     results = db.query(BorrowRecord).filter(BorrowRecord.user_id == user_id).all()
-    logger.debug(f"📚 [CRUD] 查询用户借书历史 | 用户 ID: {user_id} | 记录数: {len(results)}")
+    logger.debug(
+        f"📚 [CRUD] 查询用户借书历史 | 用户 ID: {user_id} | 记录数: {len(results)}"
+    )
     return results
 
 
@@ -79,11 +86,17 @@ def user_has_active_borrows(db: Session, user_id: int) -> bool:
     reconcile_legacy_return_pending(db)
     reconcile_reservations(db)
 
-    record = db.query(BorrowRecord).filter(
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.RETURN_PENDING]),
-        _not_renew_request_filter()
-    ).first()
+    record = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.status.in_(
+                [BorrowStatus.APPROVED, BorrowStatus.RETURN_PENDING]
+            ),
+            _not_renew_request_filter(),
+        )
+        .first()
+    )
     return bool(record)
 
 
@@ -91,89 +104,177 @@ def get_all_borrow_records(db: Session):
     """馆员查看全量借阅记录（含借阅/预约/续借/归还历史）"""
     reconcile_legacy_return_pending(db)
     reconcile_reservations(db)
-    results = db.query(BorrowRecord).order_by(BorrowRecord.request_date.desc(), BorrowRecord.id.desc()).all()
+    results = (
+        db.query(BorrowRecord)
+        .order_by(BorrowRecord.request_date.desc(), BorrowRecord.id.desc())
+        .all()
+    )
     logger.debug(f"📚 [CRUD] 查询全量借阅记录 | 记录数: {len(results)}")
     return results
 
+
 def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCreate):
     """创建借书请求"""
-    from app.crud import crud_copy
     from app.models.copy import BookCopy, CopyStatus
-    
-    logger.debug(f"📤 [CRUD] 开始创建借书请求 | 用户 ID: {user_id} | 书籍 ID: {request_in.book_id}")
-    
-    # 检查书籍是否可借
+
+    logger.debug(
+        f"📤 [CRUD] 开始创建借书请求 | 用户 ID: {user_id} "
+        f"| 书籍 ID: {request_in.book_id} "
+        f"| 副本 ID: {request_in.copy_id}"
+    )
+
+    # 1. 检查书籍是否存在
     book = db.query(Book).filter(Book.id == request_in.book_id).first()
+
     if not book:
-        logger.warning(f"⚠️ [CRUD] 借书请求失败: 书籍不存在 | 书籍 ID: {request_in.book_id}")
-        return None
-    
-    if book.available_copies <= 0:
-        logger.warning(f"⚠️ [CRUD] 借书请求失败: 书籍无可用副本 | 书籍: {book.title} | 可用数: {book.available_copies}")
+        logger.warning(
+            f"⚠️ [CRUD] 借书请求失败: 书籍不存在 | " f"书籍 ID: {request_in.book_id}"
+        )
         return None
 
-    # 检查用户是否已有未归还的相同书籍
-    existing = db.query(BorrowRecord).filter(
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.book_id == request_in.book_id,
-        BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.PENDING, BorrowStatus.RETURN_PENDING]),
-        _not_renew_request_filter()
-    ).first()
+    # 2. 检查用户是否已有未归还记录
+    existing = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.book_id == request_in.book_id,
+            BorrowRecord.status.in_(
+                [
+                    BorrowStatus.APPROVED,
+                    BorrowStatus.PENDING,
+                    BorrowStatus.RETURN_PENDING,
+                ]
+            ),
+            _not_renew_request_filter(),
+        )
+        .first()
+    )
+
     if existing:
-        logger.warning(f"⚠️ [CRUD] 借书请求失败: 用户已有该书籍的未归还记录 | 用户 ID: {user_id} | 书籍: {book.title}")
+        logger.warning(
+            f"⚠️ [CRUD] 借书请求失败: 用户已有该书籍未归还记录 "
+            f"| 用户 ID: {user_id} "
+            f"| 书籍: {book.title}"
+        )
         return None
 
-    # 获取并立即占用一个可用副本，避免并发请求拿到同一本实体副本
-    available_copy = db.query(BookCopy).filter(
-        BookCopy.book_id == request_in.book_id,
-        BookCopy.status == CopyStatus.AVAILABLE
-    ).with_for_update().first()
-    if not available_copy:
-        logger.warning(f"⚠️ [CRUD] 借书请求失败: 无可用的书籍副本 | 书籍: {book.title}")
+    # 3. 查询指定副本（加锁防并发）
+    copy = (
+        db.query(BookCopy)
+        .filter(BookCopy.id == request_in.copy_id)
+        .with_for_update()
+        .first()
+    )
+
+    if not copy:
+        logger.warning(
+            f"⚠️ [CRUD] 借书请求失败: 副本不存在 " f"| 副本 ID: {request_in.copy_id}"
+        )
         return None
 
-    available_copy.status = CopyStatus.BORROWED
-    book.available_copies -= 1
+    # 4. 检查副本是否属于该书
+    if copy.book_id != request_in.book_id:
+        logger.warning(
+            f"⚠️ [CRUD] 借书请求失败: 副本不属于该书 "
+            f"| 副本 ID: {copy.id} "
+            f"| 副本书籍 ID: {copy.book_id} "
+            f"| 请求书籍 ID: {request_in.book_id}"
+        )
+        return None
 
+    # 5. 检查副本状态
+    if copy.status != CopyStatus.AVAILABLE:
+        logger.warning(
+            f"⚠️ [CRUD] 借书请求失败: 副本不可借 "
+            f"| 副本 ID: {copy.id} "
+            f"| 当前状态: {copy.status}"
+        )
+        return None
+
+    # 6. 更新副本状态
+    copy.status = CopyStatus.BORROWED
+
+    # 7. 更新可借数量
+    if book.available_copies > 0:
+        book.available_copies -= 1
+
+    # 8. 创建借阅记录
     db_record = BorrowRecord(
         user_id=user_id,
         book_id=request_in.book_id,
-        copy_id=available_copy.id,
+        copy_id=copy.id,
         status=BorrowStatus.PENDING,
         request_date=datetime.utcnow(),
-        # 暂存读者期望归还日期，审批通过时优先采用
-        due_date=request_in.requested_due_date
+        due_date=request_in.requested_due_date,
     )
-    db.add(available_copy)
+
+    db.add(copy)
     db.add(book)
     db.add(db_record)
-    db.commit()
-    db.refresh(db_record)
-    logger.info(f"✅ [CRUD] 借书请求已创建 | 记录 ID: {db_record.id} | 用户 ID: {user_id} | 书籍: {book.title} | 副本号: {available_copy.barcode_number}")
-    return db_record
+
+    try:
+        db.commit()
+        db.refresh(db_record)
+
+        logger.info(
+            f"✅ [CRUD] 借书请求已创建 "
+            f"| 记录 ID: {db_record.id} "
+            f"| 用户 ID: {user_id} "
+            f"| 书籍: {book.title} "
+            f"| 副本号: {copy.barcode_number}"
+        )
+
+        return db_record
+
+    except Exception as e:
+        db.rollback()
+
+        logger.error(
+            f"❌ [CRUD] 借书请求创建失败 " f"| 用户 ID: {user_id} " f"| 错误: {str(e)}"
+        )
+
+        return None
 
 
 def create_reserve_request(db: Session, user_id: int, request_in: BorrowRequestCreate):
     """创建预约请求（无库存时）"""
-    logger.debug(f"📌 [CRUD] 开始创建预约请求 | 用户 ID: {user_id} | 书籍 ID: {request_in.book_id}")
+    logger.debug(
+        f"📌 [CRUD] 开始创建预约请求 | 用户 ID: {user_id} | 书籍 ID: {request_in.book_id}"
+    )
 
     book = db.query(Book).filter(Book.id == request_in.book_id).first()
     if not book:
-        logger.warning(f"⚠️ [CRUD] 预约请求失败: 书籍不存在 | 书籍 ID: {request_in.book_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 预约请求失败: 书籍不存在 | 书籍 ID: {request_in.book_id}"
+        )
         return None
 
     if book.available_copies > 0:
-        logger.warning(f"⚠️ [CRUD] 预约请求失败: 该书当前可借，无需预约 | 书籍: {book.title}")
+        logger.warning(
+            f"⚠️ [CRUD] 预约请求失败: 该书当前可借，无需预约 | 书籍: {book.title}"
+        )
         return None
 
-    existing = db.query(BorrowRecord).filter(
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.book_id == request_in.book_id,
-        BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.PENDING, BorrowStatus.RETURN_PENDING]),
-        _not_renew_request_filter()
-    ).first()
+    existing = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.book_id == request_in.book_id,
+            BorrowRecord.status.in_(
+                [
+                    BorrowStatus.APPROVED,
+                    BorrowStatus.PENDING,
+                    BorrowStatus.RETURN_PENDING,
+                ]
+            ),
+            _not_renew_request_filter(),
+        )
+        .first()
+    )
     if existing:
-        logger.warning(f"⚠️ [CRUD] 预约请求失败: 用户已有该书籍相关未结束记录 | 用户 ID: {user_id} | 书籍: {book.title}")
+        logger.warning(
+            f"⚠️ [CRUD] 预约请求失败: 用户已有该书籍相关未结束记录 | 用户 ID: {user_id} | 书籍: {book.title}"
+        )
         return None
 
     # 预约时不需要关联copy_id，因为副本在批准时才分配
@@ -183,13 +284,16 @@ def create_reserve_request(db: Session, user_id: int, request_in: BorrowRequestC
         copy_id=None,  # 预约时暂无具体副本
         status=BorrowStatus.PENDING,
         request_date=datetime.utcnow(),
-        librarian_notes=RESERVE_NOTE_FLAG
+        librarian_notes=RESERVE_NOTE_FLAG,
     )
     db.add(db_record)
     db.commit()
     db.refresh(db_record)
-    logger.info(f"✅ [CRUD] 预约请求已创建 | 记录 ID: {db_record.id} | 用户 ID: {user_id} | 书籍: {book.title}")
+    logger.info(
+        f"✅ [CRUD] 预约请求已创建 | 记录 ID: {db_record.id} | 用户 ID: {user_id} | 书籍: {book.title}"
+    )
     return db_record
+
 
 def create_return_request(
     db: Session,
@@ -202,17 +306,27 @@ def create_return_request(
 ):
     """直接归还书籍（无需管理员审批）"""
     from app.models.copy import BookCopy, CopyStatus
-    
-    logger.debug(f"📥 [CRUD] 开始处理直接还书 | 用户 ID: {user_id} | 记录 ID: {record_id}")
-    
-    record = db.query(BorrowRecord).filter(
-        BorrowRecord.id == record_id,
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.RETURN_PENDING]),
-        _not_renew_request_filter()
-    ).first()
+
+    logger.debug(
+        f"📥 [CRUD] 开始处理直接还书 | 用户 ID: {user_id} | 记录 ID: {record_id}"
+    )
+
+    record = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.id == record_id,
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.status.in_(
+                [BorrowStatus.APPROVED, BorrowStatus.RETURN_PENDING]
+            ),
+            _not_renew_request_filter(),
+        )
+        .first()
+    )
     if not record:
-        logger.warning(f"⚠️ [CRUD] 还书请求失败: 记录不存在或状态不是APPROVED | 记录 ID: {record_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 还书请求失败: 记录不存在或状态不是APPROVED | 记录 ID: {record_id}"
+        )
         return None
 
     # 二次一致性校验：后端独立校验，接受三种输入方式：
@@ -221,50 +335,78 @@ def create_return_request(
     # 3) 两者都提供时会交叉校验
     parsed_isbn, parsed_barcode_number = _parse_barcode_text(barcode)
     expected_isbn = parsed_isbn or isbn
-    expected_barcode_number = parsed_barcode_number if parsed_barcode_number is not None else barcode_number
+    expected_barcode_number = (
+        parsed_barcode_number if parsed_barcode_number is not None else barcode_number
+    )
 
     # 如果没有提供内部 copy_id，则尝试使用 book_id + barcode_number 查找对应的 BookCopy
     from app.models.copy import BookCopy as _BookCopy
+
     if copy_id is None:
         if expected_barcode_number is None:
-            raise ValueError("copy_id or barcode/barcode_number is required for return request")
+            raise ValueError(
+                "copy_id or barcode/barcode_number is required for return request"
+            )
 
         # 查找同一本书（record.book_id）下的副本，匹配 barcode_number
-        found_copy = db.query(_BookCopy).filter(
-            _BookCopy.book_id == record.book_id,
-            _BookCopy.barcode_number == expected_barcode_number
-        ).first()
+        found_copy = (
+            db.query(_BookCopy)
+            .filter(
+                _BookCopy.book_id == record.book_id,
+                _BookCopy.barcode_number == expected_barcode_number,
+            )
+            .first()
+        )
         if not found_copy:
-            raise ValueError("Copy consistency check failed: barcode number does not match any copy for this book")
+            raise ValueError(
+                "Copy consistency check failed: barcode number does not match any copy for this book"
+            )
         copy_id = found_copy.id
 
     # 此时 copy_id 应指向内部 BookCopy.id，继续交叉校验
     if record.copy_id is None or record.copy_id != copy_id:
-        raise ValueError("Copy consistency check failed: provided copy does not match borrow record")
+        raise ValueError(
+            "Copy consistency check failed: provided copy does not match borrow record"
+        )
 
     copy = db.query(_BookCopy).filter(_BookCopy.id == record.copy_id).first()
     if not copy:
-        raise ValueError("Copy consistency check failed: borrow record references a missing copy")
+        raise ValueError(
+            "Copy consistency check failed: borrow record references a missing copy"
+        )
 
-    if expected_barcode_number is not None and copy.barcode_number != expected_barcode_number:
-        raise ValueError("Copy consistency check failed: barcode number does not match borrow record")
+    if (
+        expected_barcode_number is not None
+        and copy.barcode_number != expected_barcode_number
+    ):
+        raise ValueError(
+            "Copy consistency check failed: barcode number does not match borrow record"
+        )
 
     if expected_isbn:
         book = db.query(Book).filter(Book.id == record.book_id).first()
         if not book:
-            raise ValueError("Copy consistency check failed: borrow record references a missing book")
+            raise ValueError(
+                "Copy consistency check failed: borrow record references a missing book"
+            )
         if _normalize_isbn(book.isbn) != _normalize_isbn(expected_isbn):
-            raise ValueError("Copy consistency check failed: ISBN does not match borrow record")
-    
+            raise ValueError(
+                "Copy consistency check failed: ISBN does not match borrow record"
+            )
+
     try:
-        book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
-        
+        book = (
+            db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
+        )
+
         # 更新副本状态为可用
         if copy:
             copy.status = CopyStatus.AVAILABLE
             db.add(copy)
-            logger.debug(f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
-        
+            logger.debug(
+                f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}"
+            )
+
         book.available_copies += 1
         # 旧流程中可能已经存在 return_request_date，这里保持幂等
         record.return_request_date = record.return_request_date or datetime.utcnow()
@@ -273,9 +415,7 @@ def create_return_request(
 
         # 直接归还后也触发预约队列自动分配
         auto_assigned_records = assign_reservations_if_available(
-            db,
-            book,
-            reason="AUTO_ASSIGNED_AFTER_DIRECT_RETURN"
+            db, book, reason="AUTO_ASSIGNED_AFTER_DIRECT_RETURN"
         )
         db.add(book)
         db.add(record)
@@ -287,7 +427,9 @@ def create_return_request(
                 f"分配数量: {len(auto_assigned_records)} | 当前库存: {book.available_copies}"
             )
         else:
-            logger.info(f"✅ [CRUD] 直接还书成功 | 记录 ID: {record_id} | 用户 ID: {user_id} | 当前库存: {book.available_copies}")
+            logger.info(
+                f"✅ [CRUD] 直接还书成功 | 记录 ID: {record_id} | 用户 ID: {user_id} | 当前库存: {book.available_copies}"
+            )
     except Exception as e:
         logger.error(f"❌ [CRUD] 直接还书异常 | 记录 ID: {record_id} | 错误: {str(e)}")
         db.rollback()
@@ -300,16 +442,20 @@ def reconcile_legacy_return_pending(db: Session):
     将历史 RETURN_PENDING（旧“需管理员审批还书”流程）补偿为 RETURNED。
     仅在首次补偿时回补库存，避免重复累加。
     """
-    legacy_records = db.query(BorrowRecord).filter(
-        BorrowRecord.status == BorrowStatus.RETURN_PENDING
-    ).all()
+    legacy_records = (
+        db.query(BorrowRecord)
+        .filter(BorrowRecord.status == BorrowStatus.RETURN_PENDING)
+        .all()
+    )
 
     if not legacy_records:
         return 0
 
     reconciled_count = 0
     for record in legacy_records:
-        book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
+        book = (
+            db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
+        )
         if not book:
             continue
 
@@ -324,9 +470,7 @@ def reconcile_legacy_return_pending(db: Session):
         reconciled_count += 1
 
         assign_reservations_if_available(
-            db,
-            book,
-            reason="AUTO_ASSIGNED_AFTER_LEGACY_RETURN_RECONCILE"
+            db, book, reason="AUTO_ASSIGNED_AFTER_LEGACY_RETURN_RECONCILE"
         )
 
     if reconciled_count > 0:
@@ -338,29 +482,49 @@ def reconcile_legacy_return_pending(db: Session):
 
 def create_renew_request(db: Session, user_id: int, request_in: RenewRequestCreate):
     """创建续借请求（对已借出的记录）"""
-    logger.debug(f"🔁 [CRUD] 开始创建续借请求 | 用户 ID: {user_id} | 原借阅记录 ID: {request_in.borrow_record_id}")
+    logger.debug(
+        f"🔁 [CRUD] 开始创建续借请求 | 用户 ID: {user_id} | 原借阅记录 ID: {request_in.borrow_record_id}"
+    )
 
-    origin = db.query(BorrowRecord).filter(
-        BorrowRecord.id == request_in.borrow_record_id,
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.status == BorrowStatus.APPROVED
-    ).first()
+    origin = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.id == request_in.borrow_record_id,
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.status == BorrowStatus.APPROVED,
+        )
+        .first()
+    )
     if not origin:
-        logger.warning(f"⚠️ [CRUD] 续借请求失败: 原记录不存在或状态不是APPROVED | 记录 ID: {request_in.borrow_record_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 续借请求失败: 原记录不存在或状态不是APPROVED | 记录 ID: {request_in.borrow_record_id}"
+        )
         return None
 
-    existing_pending_renew = db.query(BorrowRecord).filter(
-        BorrowRecord.user_id == user_id,
-        BorrowRecord.book_id == origin.book_id,
-        BorrowRecord.status == BorrowStatus.PENDING,
-        BorrowRecord.librarian_notes.like(f"{RENEW_NOTE_PREFIX}{request_in.borrow_record_id}%")
-    ).first()
+    existing_pending_renew = (
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.user_id == user_id,
+            BorrowRecord.book_id == origin.book_id,
+            BorrowRecord.status == BorrowStatus.PENDING,
+            BorrowRecord.librarian_notes.like(
+                f"{RENEW_NOTE_PREFIX}{request_in.borrow_record_id}%"
+            ),
+        )
+        .first()
+    )
     if existing_pending_renew:
-        logger.warning(f"⚠️ [CRUD] 续借请求失败: 已有待处理续借请求 | 原记录 ID: {request_in.borrow_record_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 续借请求失败: 已有待处理续借请求 | 原记录 ID: {request_in.borrow_record_id}"
+        )
         return None
 
     if request_in.requested_due_date:
-        base_due = origin.due_date if origin.due_date and origin.due_date > datetime.utcnow() else datetime.utcnow()
+        base_due = (
+            origin.due_date
+            if origin.due_date and origin.due_date > datetime.utcnow()
+            else datetime.utcnow()
+        )
         if request_in.requested_due_date <= base_due:
             logger.warning(
                 f"⚠️ [CRUD] 续借请求失败: 期望日期不晚于当前到期日 | 原记录 ID: {request_in.borrow_record_id} | "
@@ -375,21 +539,27 @@ def create_renew_request(db: Session, user_id: int, request_in: RenewRequestCrea
         status=BorrowStatus.PENDING,
         request_date=datetime.utcnow(),
         due_date=request_in.requested_due_date,
-        librarian_notes=f"{RENEW_NOTE_PREFIX}{request_in.borrow_record_id}"
+        librarian_notes=f"{RENEW_NOTE_PREFIX}{request_in.borrow_record_id}",
     )
     db.add(renew_record)
     db.commit()
     db.refresh(renew_record)
-    logger.info(f"✅ [CRUD] 续借请求已创建 | 请求记录 ID: {renew_record.id} | 原记录 ID: {request_in.borrow_record_id}")
+    logger.info(
+        f"✅ [CRUD] 续借请求已创建 | 请求记录 ID: {renew_record.id} | 原记录 ID: {request_in.borrow_record_id}"
+    )
     return renew_record
 
 
 def is_renew_request(record: BorrowRecord) -> bool:
-    return bool(record.librarian_notes and record.librarian_notes.startswith(RENEW_NOTE_PREFIX))
+    return bool(
+        record.librarian_notes and record.librarian_notes.startswith(RENEW_NOTE_PREFIX)
+    )
 
 
 def is_reserve_request(record: BorrowRecord) -> bool:
-    return bool(record.librarian_notes and record.librarian_notes.startswith(RESERVE_NOTE_FLAG))
+    return bool(
+        record.librarian_notes and record.librarian_notes.startswith(RESERVE_NOTE_FLAG)
+    )
 
 
 def assign_reservations_if_available(db: Session, book: Book, reason: str):
@@ -399,14 +569,19 @@ def assign_reservations_if_available(db: Session, book: Book, reason: str):
     """
     from app.crud import crud_copy
     from app.models.copy import CopyStatus
-    
+
     assigned_records = []
     while book.available_copies > 0:
-        next_reservation = db.query(BorrowRecord).filter(
-            BorrowRecord.book_id == book.id,
-            BorrowRecord.status == BorrowStatus.PENDING,
-            BorrowRecord.librarian_notes.like(f"{RESERVE_NOTE_FLAG}%")
-        ).order_by(BorrowRecord.request_date.asc(), BorrowRecord.id.asc()).first()
+        next_reservation = (
+            db.query(BorrowRecord)
+            .filter(
+                BorrowRecord.book_id == book.id,
+                BorrowRecord.status == BorrowStatus.PENDING,
+                BorrowRecord.librarian_notes.like(f"{RESERVE_NOTE_FLAG}%"),
+            )
+            .order_by(BorrowRecord.request_date.asc(), BorrowRecord.id.asc())
+            .first()
+        )
 
         if not next_reservation:
             break
@@ -416,11 +591,11 @@ def assign_reservations_if_available(db: Session, book: Book, reason: str):
         if not available_copy:
             logger.warning(f"⚠️ [CRUD] 自动分配失败: 无可用副本 | 书籍 ID: {book.id}")
             break
-        
+
         # 更新副本状态为已借出
         available_copy.status = CopyStatus.BORROWED
         db.add(available_copy)
-        
+
         # 自动分配会立即消耗一个可用副本，保证库存一致性
         book.available_copies -= 1
         now = datetime.utcnow()
@@ -432,7 +607,9 @@ def assign_reservations_if_available(db: Session, book: Book, reason: str):
         db.add(book)
         db.add(next_reservation)
         assigned_records.append(next_reservation)
-        logger.debug(f"🔄 [CRUD] 自动分配预约 | 预约ID: {next_reservation.id} | 副本ID: {available_copy.id} | 副本号: {available_copy.barcode_number}")
+        logger.debug(
+            f"🔄 [CRUD] 自动分配预约 | 预约ID: {next_reservation.id} | 副本ID: {available_copy.id} | 副本号: {available_copy.barcode_number}"
+        )
 
     return assigned_records
 
@@ -446,9 +623,7 @@ def reconcile_reservations(db: Session):
     total_assigned = 0
     for book in books:
         assigned = assign_reservations_if_available(
-            db,
-            book,
-            reason="AUTO_ASSIGNED_RECONCILE"
+            db, book, reason="AUTO_ASSIGNED_RECONCILE"
         )
         if assigned:
             total_assigned += len(assigned)
@@ -458,31 +633,45 @@ def reconcile_reservations(db: Session):
         logger.info(f"🔄 [CRUD] 补偿分配完成 | 自动分配预约数量: {total_assigned}")
     return total_assigned
 
+
 def process_borrow_request(db: Session, record_id: int, process_in: RequestProcess):
     """处理借书请求（批准或拒绝）"""
     from app.crud import crud_copy
     from app.models.copy import CopyStatus
-    
-    logger.info(f"⚙️ [CRUD] 开始处理借书请求 | 记录 ID: {record_id} | 操作: {process_in.action}")
-    
+
+    logger.info(
+        f"⚙️ [CRUD] 开始处理借书请求 | 记录 ID: {record_id} | 操作: {process_in.action}"
+    )
+
     record = db.query(BorrowRecord).filter(BorrowRecord.id == record_id).first()
     if not record or record.status != BorrowStatus.PENDING:
-        logger.warning(f"⚠️ [CRUD] 处理借书请求失败: 记录状态不是PENDING | 记录 ID: {record_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 处理借书请求失败: 记录状态不是PENDING | 记录 ID: {record_id}"
+        )
         return None
 
     try:
         if process_in.action == "approve":
             # 加行锁防止并发超借
-            book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
+            book = (
+                db.query(Book)
+                .filter(Book.id == record.book_id)
+                .with_for_update()
+                .first()
+            )
             if book.available_copies <= 0:
                 if is_reserve_request(record):
-                    logger.warning(f"⚠️ [CRUD] 预约审批暂不可通过: 当前无库存 | 书籍: {book.title} | 可用数: {book.available_copies}")
+                    logger.warning(
+                        f"⚠️ [CRUD] 预约审批暂不可通过: 当前无库存 | 书籍: {book.title} | 可用数: {book.available_copies}"
+                    )
                     return None
                 record.status = BorrowStatus.REJECTED
                 record.librarian_notes = "库存不足"
                 db.add(record)
                 db.commit()
-                logger.warning(f"❌ [CRUD] 借书请求被拒: 库存不足 | 书籍: {book.title} | 可用数: {book.available_copies}")
+                logger.warning(
+                    f"❌ [CRUD] 借书请求被拒: 库存不足 | 书籍: {book.title} | 可用数: {book.available_copies}"
+                )
                 return record
 
             # 为预约分配副本（普通借书已在create_borrow_request中分配）
@@ -490,31 +679,44 @@ def process_borrow_request(db: Session, record_id: int, process_in: RequestProce
             if record.copy_id is None:
                 available_copy = crud_copy.get_book_available_copy(db, record.book_id)
                 if not available_copy:
-                    logger.warning(f"⚠️ [CRUD] 预约审批失败: 无可用副本 | 书籍: {book.title}")
+                    logger.warning(
+                        f"⚠️ [CRUD] 预约审批失败: 无可用副本 | 书籍: {book.title}"
+                    )
                     return None
                 record.copy_id = available_copy.id
                 book.available_copies -= 1
                 inventory_decremented = True
 
             from app.models.copy import BookCopy
+
             copy = db.query(BookCopy).filter(BookCopy.id == record.copy_id).first()
             if not copy:
-                logger.warning(f"⚠️ [CRUD] 借书审批失败: 副本不存在 | 副本ID: {record.copy_id}")
+                logger.warning(
+                    f"⚠️ [CRUD] 借书审批失败: 副本不存在 | 副本ID: {record.copy_id}"
+                )
                 return None
 
             if copy.status == CopyStatus.AVAILABLE:
                 copy.status = CopyStatus.BORROWED
                 db.add(copy)
-                logger.debug(f"🔄 [CRUD] 副本状态更新为已借出 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
+                logger.debug(
+                    f"🔄 [CRUD] 副本状态更新为已借出 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}"
+                )
                 if not inventory_decremented:
                     book.available_copies -= 1
             elif copy.status != CopyStatus.BORROWED:
                 copy.status = CopyStatus.BORROWED
                 db.add(copy)
-                logger.debug(f"🔄 [CRUD] 副本状态修正为已借出 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
+                logger.debug(
+                    f"🔄 [CRUD] 副本状态修正为已借出 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}"
+                )
 
             now = datetime.utcnow()
-            due_date = record.due_date if record.due_date and record.due_date > now else now + timedelta(days=14)
+            due_date = (
+                record.due_date
+                if record.due_date and record.due_date > now
+                else now + timedelta(days=14)
+            )
             record.status = BorrowStatus.APPROVED
             record.approve_date = now
             record.due_date = due_date
@@ -522,15 +724,23 @@ def process_borrow_request(db: Session, record_id: int, process_in: RequestProce
             db.add(book)
             db.add(record)
             db.commit()
-            logger.info(f"✅ [CRUD] 借书请求已批准 | 记录 ID: {record_id} | 书籍: {book.title} | 副本ID: {record.copy_id} | 剩余库存: {book.available_copies}")
+            logger.info(
+                f"✅ [CRUD] 借书请求已批准 | 记录 ID: {record_id} | 书籍: {book.title} | 副本ID: {record.copy_id} | 剩余库存: {book.available_copies}"
+            )
         elif process_in.action == "reject":
             if record.copy_id:
                 from app.models.copy import BookCopy
+
                 copy = db.query(BookCopy).filter(BookCopy.id == record.copy_id).first()
                 if copy and copy.status == CopyStatus.BORROWED:
                     copy.status = CopyStatus.AVAILABLE
                     db.add(copy)
-                    book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
+                    book = (
+                        db.query(Book)
+                        .filter(Book.id == record.book_id)
+                        .with_for_update()
+                        .first()
+                    )
                     if book:
                         book.available_copies += 1
                         db.add(book)
@@ -538,12 +748,18 @@ def process_borrow_request(db: Session, record_id: int, process_in: RequestProce
             record.librarian_notes = process_in.notes
             db.add(record)
             db.commit()
-            logger.info(f"✅ [CRUD] 借书请求已拒绝 | 记录 ID: {record_id} | 备注: {process_in.notes}")
+            logger.info(
+                f"✅ [CRUD] 借书请求已拒绝 | 记录 ID: {record_id} | 备注: {process_in.notes}"
+            )
         else:
-            logger.error(f"❌ [CRUD] 处理借书请求失败: 无效的操作 | 操作: {process_in.action}")
+            logger.error(
+                f"❌ [CRUD] 处理借书请求失败: 无效的操作 | 操作: {process_in.action}"
+            )
             return None
     except Exception as e:
-        logger.error(f"❌ [CRUD] 处理借书请求异常 | 记录 ID: {record_id} | 错误: {str(e)}")
+        logger.error(
+            f"❌ [CRUD] 处理借书请求异常 | 记录 ID: {record_id} | 错误: {str(e)}"
+        )
         db.rollback()
         raise
 
@@ -553,20 +769,36 @@ def process_borrow_request(db: Session, record_id: int, process_in: RequestProce
 
 def process_renew_request(db: Session, request_id: int, process_in: RequestProcess):
     """处理续借请求（批准或拒绝）"""
-    logger.info(f"⚙️ [CRUD] 开始处理续借请求 | 请求记录 ID: {request_id} | 操作: {process_in.action}")
+    logger.info(
+        f"⚙️ [CRUD] 开始处理续借请求 | 请求记录 ID: {request_id} | 操作: {process_in.action}"
+    )
 
-    request_record = db.query(BorrowRecord).filter(BorrowRecord.id == request_id).first()
-    if not request_record or request_record.status != BorrowStatus.PENDING or not is_renew_request(request_record):
-        logger.warning(f"⚠️ [CRUD] 处理续借请求失败: 请求记录非法 | 请求 ID: {request_id}")
+    request_record = (
+        db.query(BorrowRecord).filter(BorrowRecord.id == request_id).first()
+    )
+    if (
+        not request_record
+        or request_record.status != BorrowStatus.PENDING
+        or not is_renew_request(request_record)
+    ):
+        logger.warning(
+            f"⚠️ [CRUD] 处理续借请求失败: 请求记录非法 | 请求 ID: {request_id}"
+        )
         return None
 
     try:
-        origin_id = int(request_record.librarian_notes.replace(RENEW_NOTE_PREFIX, "").split("|")[0])
+        origin_id = int(
+            request_record.librarian_notes.replace(RENEW_NOTE_PREFIX, "").split("|")[0]
+        )
         origin = db.query(BorrowRecord).filter(BorrowRecord.id == origin_id).first()
         if not origin or origin.status != BorrowStatus.APPROVED:
-            logger.warning(f"⚠️ [CRUD] 处理续借请求失败: 原借阅记录不可续借 | 原记录 ID: {origin_id}")
+            logger.warning(
+                f"⚠️ [CRUD] 处理续借请求失败: 原借阅记录不可续借 | 原记录 ID: {origin_id}"
+            )
             request_record.status = BorrowStatus.REJECTED
-            request_record.librarian_notes = f"{RENEW_NOTE_PREFIX}{origin_id}|invalid_origin"
+            request_record.librarian_notes = (
+                f"{RENEW_NOTE_PREFIX}{origin_id}|invalid_origin"
+            )
             db.add(request_record)
             db.commit()
             db.refresh(request_record)
@@ -574,13 +806,17 @@ def process_renew_request(db: Session, request_id: int, process_in: RequestProce
 
         if process_in.action == "approve":
             now = datetime.utcnow()
-            base_due = origin.due_date if origin.due_date and origin.due_date > now else now
+            base_due = (
+                origin.due_date if origin.due_date and origin.due_date > now else now
+            )
             preferred_due = request_record.due_date
             if preferred_due and preferred_due > base_due:
                 origin.due_date = preferred_due
             elif preferred_due and preferred_due <= base_due:
                 request_record.status = BorrowStatus.REJECTED
-                request_record.librarian_notes = f"{RENEW_NOTE_PREFIX}{origin_id}|invalid_preferred_due"
+                request_record.librarian_notes = (
+                    f"{RENEW_NOTE_PREFIX}{origin_id}|invalid_preferred_due"
+                )
                 db.add(request_record)
                 db.commit()
                 db.refresh(request_record)
@@ -594,51 +830,73 @@ def process_renew_request(db: Session, request_id: int, process_in: RequestProce
             request_record.status = BorrowStatus.APPROVED
             request_record.approve_date = now
             request_record.due_date = origin.due_date
-            request_record.librarian_notes = f"{RENEW_NOTE_PREFIX}{origin_id}|approved|{process_in.notes or ''}"
+            request_record.librarian_notes = (
+                f"{RENEW_NOTE_PREFIX}{origin_id}|approved|{process_in.notes or ''}"
+            )
             db.add(origin)
             db.add(request_record)
             db.commit()
-            logger.info(f"✅ [CRUD] 续借请求已批准 | 原记录 ID: {origin_id} | 新到期时间: {origin.due_date}")
+            logger.info(
+                f"✅ [CRUD] 续借请求已批准 | 原记录 ID: {origin_id} | 新到期时间: {origin.due_date}"
+            )
         elif process_in.action == "reject":
             request_record.status = BorrowStatus.REJECTED
-            request_record.librarian_notes = f"{RENEW_NOTE_PREFIX}{origin_id}|rejected|{process_in.notes or ''}"
+            request_record.librarian_notes = (
+                f"{RENEW_NOTE_PREFIX}{origin_id}|rejected|{process_in.notes or ''}"
+            )
             db.add(request_record)
             db.commit()
             logger.info(f"✅ [CRUD] 续借请求已拒绝 | 原记录 ID: {origin_id}")
         else:
-            logger.error(f"❌ [CRUD] 处理续借请求失败: 无效操作 | 操作: {process_in.action}")
+            logger.error(
+                f"❌ [CRUD] 处理续借请求失败: 无效操作 | 操作: {process_in.action}"
+            )
             return None
     except Exception as e:
-        logger.error(f"❌ [CRUD] 处理续借请求异常 | 请求 ID: {request_id} | 错误: {str(e)}")
+        logger.error(
+            f"❌ [CRUD] 处理续借请求异常 | 请求 ID: {request_id} | 错误: {str(e)}"
+        )
         db.rollback()
         raise
 
     db.refresh(request_record)
     return request_record
 
+
 def process_return_request(db: Session, record_id: int, process_in: RequestProcess):
     """处理还书请求（批准或拒绝）"""
     from app.models.copy import BookCopy, CopyStatus
-    
-    logger.info(f"⚙️ [CRUD] 开始处理还书请求 | 记录 ID: {record_id} | 操作: {process_in.action}")
-    
+
+    logger.info(
+        f"⚙️ [CRUD] 开始处理还书请求 | 记录 ID: {record_id} | 操作: {process_in.action}"
+    )
+
     record = db.query(BorrowRecord).filter(BorrowRecord.id == record_id).first()
     if not record or record.status != BorrowStatus.RETURN_PENDING:
-        logger.warning(f"⚠️ [CRUD] 处理还书请求失败: 记录状态不是RETURN_PENDING | 记录 ID: {record_id}")
+        logger.warning(
+            f"⚠️ [CRUD] 处理还书请求失败: 记录状态不是RETURN_PENDING | 记录 ID: {record_id}"
+        )
         return None
 
     try:
         if process_in.action == "approve":
-            book = db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
-            
+            book = (
+                db.query(Book)
+                .filter(Book.id == record.book_id)
+                .with_for_update()
+                .first()
+            )
+
             # 更新副本状态为可用
             if record.copy_id:
                 copy = db.query(BookCopy).filter(BookCopy.id == record.copy_id).first()
                 if copy:
                     copy.status = CopyStatus.AVAILABLE
                     db.add(copy)
-                    logger.debug(f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}")
-            
+                    logger.debug(
+                        f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}"
+                    )
+
             book.available_copies += 1
             record.status = BorrowStatus.RETURNED
             record.actual_return_date = datetime.utcnow()
@@ -646,9 +904,7 @@ def process_return_request(db: Session, record_id: int, process_in: RequestProce
 
             # 自动分配给最早预约者（如果有）
             auto_assigned_records = assign_reservations_if_available(
-                db,
-                book,
-                reason="AUTO_ASSIGNED_AFTER_RETURN"
+                db, book, reason="AUTO_ASSIGNED_AFTER_RETURN"
             )
             db.add(book)
             db.add(record)
@@ -659,19 +915,27 @@ def process_return_request(db: Session, record_id: int, process_in: RequestProce
                     f"分配数量: {len(auto_assigned_records)} | 当前库存: {book.available_copies}"
                 )
             else:
-                logger.info(f"✅ [CRUD] 还书请求已批准 | 记录 ID: {record_id} | 书籍: {book.title} | 库存已增加 | 当前库存: {book.available_copies}")
+                logger.info(
+                    f"✅ [CRUD] 还书请求已批准 | 记录 ID: {record_id} | 书籍: {book.title} | 库存已增加 | 当前库存: {book.available_copies}"
+                )
         elif process_in.action == "reject":
             record.status = BorrowStatus.APPROVED
             record.return_request_date = None
             record.librarian_notes = process_in.notes
             db.add(record)
             db.commit()
-            logger.info(f"✅ [CRUD] 还书请求已拒绝 | 记录 ID: {record_id} | 用户需重新提交还书请求")
+            logger.info(
+                f"✅ [CRUD] 还书请求已拒绝 | 记录 ID: {record_id} | 用户需重新提交还书请求"
+            )
         else:
-            logger.error(f"❌ [CRUD] 处理还书请求失败: 无效的操作 | 操作: {process_in.action}")
+            logger.error(
+                f"❌ [CRUD] 处理还书请求失败: 无效的操作 | 操作: {process_in.action}"
+            )
             return None
     except Exception as e:
-        logger.error(f"❌ [CRUD] 处理还书请求异常 | 记录 ID: {record_id} | 错误: {str(e)}")
+        logger.error(
+            f"❌ [CRUD] 处理还书请求异常 | 记录 ID: {record_id} | 错误: {str(e)}"
+        )
         db.rollback()
         raise
 

@@ -37,8 +37,6 @@ const parseBarcode = (text) => {
         isbn,
 
         copyId: Number(copyText),
-
-        barcode: text,
     };
 };
 
@@ -121,17 +119,15 @@ const BorrowScannerDialog = ({
 
         for (const item of scannedBooks) {
             try {
-                // 确保所有 ID 都是纯 Integer 类型
                 const payload = {
-                    book_id: Number(item.book.id), // 强制转换
-                    copy_id: Number(item.copyId),  // 强制转换
+                    book_id: parseInt(item.book.id, 10),
+                    copy_id: parseInt(item.copyId, 10),
                 };
                 await borrowBook(payload);
 
                 succeeded.push(item.raw);
 
             } catch (err) {
-                console.error("Single book borrow failed:", err);
 
                 // 提取具体的错误信息
                 // 后端的 detail 可能是数组（如你提供的报错），也可能是字符串
@@ -147,6 +143,7 @@ const BorrowScannerDialog = ({
                 }
 
                 failed.push(`${item.book.title}: ${errorMsg}`);
+                setErrors([`${item.book.title}: ${errorMsg}`]);
             }
         }
 

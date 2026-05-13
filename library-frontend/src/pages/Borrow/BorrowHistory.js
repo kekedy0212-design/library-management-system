@@ -167,7 +167,7 @@ const BorrowHistory = () => {
           <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: 0 }}>Borrowing Activity</h2>
           <p style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Track your library history and pending requests</p>
           <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
+            {/* <button
               onClick={handleBatchReturn}
               disabled={batchReturning || returnLoading !== null || selectedReturnIds.length === 0}
               style={actionButtonStyle}
@@ -180,7 +180,7 @@ const BorrowHistory = () => {
               style={actionButtonStyle}
             >
               {allReturnableSelected ? 'Clear Selection' : 'Select All Returnable'}
-            </button>
+            </button> */}
             <button
               onClick={() => setReturnScannerOpen(true)}
               style={actionButtonStyle}
@@ -333,7 +333,7 @@ const BorrowHistory = () => {
                               : 'Renew'}
                           </button>
 
-                          <button
+                          {/* <button
                             onClick={() => handleReturn(record.id)}
                             disabled={
                               returnLoading === record.id ||
@@ -345,7 +345,7 @@ const BorrowHistory = () => {
                             {returnLoading === record.id
                               ? 'Processing...'
                               : 'Return Book'}
-                          </button>
+                          </button> */}
                         </div>
                       )}
                     </td>
