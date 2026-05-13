@@ -7,6 +7,7 @@ import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import { borrowService } from '../../services/borrowService';
 import MdCard from '../../components/MdCard';
+import Toast from '../../components/Toast';
 import JsBarcode from 'jsbarcode';
 
 const BookDetail = () => {
@@ -18,16 +19,20 @@ const BookDetail = () => {
   const [reserveLoading, setReserveLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [requestedDueDate, setRequestedDueDate] = useState('');
+  const [toast, setToast] = useState({ visible: false, type: 'info', text: '' });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [barcodeSettings, setBarcodeSettings] = useState({
     copyRange: '',
     itemsPerRow: 2,
     itemGap: 24,
-    height: 100,
+    height: 110,
     fontSize: 18,
     textMargin: 15,
-    width: 2 // 条码线条宽度
+    // 关键：JsBarcode 的 width 是“最窄模块宽度（px）”。
+    // 设成 2 时，长内容 CODE128 的最窄条只有 ~1.5px，扫码识别率极低。
+    // 至少给 3，更稳的话 4。
+    width: 4
   });
 
   const handleSettingChange = (key, value) => {
@@ -50,9 +55,16 @@ const BookDetail = () => {
       const requestedDueDateIso = requestedDueDate
         ? new Date(`${requestedDueDate}T23:59:59`).toISOString()
         : null;
-      await borrowBook(currentBook.id, requestedDueDateIso);
-      alert('Borrow request submitted. Please wait for librarian approval.');
-      navigate('/borrow');
+      await borrowBook({
+        book_id: currentBook.id,
+        requested_due_date: requestedDueDateIso,
+      });
+      setToast({
+        visible: true,
+        type: 'success',
+        text: 'Borrow request submitted. Please wait for librarian approval.',
+      });
+      setTimeout(() => navigate('/borrow'), 1200);
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
       if (detail === 'Deposit required before borrowing') {
@@ -61,7 +73,11 @@ const BookDetail = () => {
           return;
         }
       }
-      alert(`Borrowing failed: ${detail}`);
+      setToast({
+        visible: true,
+        type: 'error',
+        text: `Borrowing failed: ${detail}`,
+      });
     } finally {
       setBorrowLoading(false);
     }
@@ -73,8 +89,12 @@ const BookDetail = () => {
     setReserveLoading(true);
     try {
       await borrowService.reserveRequest(currentBook.id);
-      alert('Reservation request submitted. Please wait for librarian approval.');
-      navigate('/borrow');
+      setToast({
+        visible: true,
+        type: 'success',
+        text: 'Reservation request submitted. Please wait for librarian approval.',
+      });
+      setTimeout(() => navigate('/borrow'), 1200);
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
       if (detail === 'Deposit required before reservation') {
@@ -83,7 +103,11 @@ const BookDetail = () => {
           return;
         }
       }
-      alert(`Reservation failed: ${detail}`);
+      setToast({
+        visible: true,
+        type: 'error',
+        text: `Reservation failed: ${detail}`,
+      });
     } finally {
       setReserveLoading(false);
     }
@@ -169,9 +193,17 @@ const BookDetail = () => {
       container.appendChild(svg);
       grid.appendChild(container);
 
+      // CODE128 静区（quiet zone）规范要求至少 10 个最窄模块宽度，给足白边
+      const quietZone = Math.max(20, width * 12);
       JsBarcode(svg, `${currentBook.isbn}/${num}`, {
         format: "CODE128",
-        width, height, fontSize, textMargin,
+        width,
+        height,
+        fontSize,
+        textMargin,
+        margin: quietZone,
+        background: "#ffffff",
+        lineColor: "#000000",
         displayValue: true,
         fontOptions: "bold"
       });
@@ -184,6 +216,12 @@ const BookDetail = () => {
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+      <Toast
+        visible={toast.visible}
+        type={toast.type}
+        text={toast.text}
+        onClose={() => setToast((prev) => ({ ...prev, visible: false }))}
+      />
       {/* Header Area */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
         <div>

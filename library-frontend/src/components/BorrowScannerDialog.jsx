@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import BarcodeScanner from './BarcodeScanner';
+import Toast from './Toast';
 import { useBorrow } from '../hooks/useBorrow';
 import { useBooks } from '../hooks/useBooks';
 import { bookService } from '../services/bookService';
@@ -56,6 +57,7 @@ const BorrowScannerDialog = ({
     const [scannedBooks, setScannedBooks] = useState([]);
     const [errors, setErrors] = useState([]);
     const [borrowing, setBorrowing] = useState(false);
+    const [toast, setToast] = useState({ visible: false, type: 'info', text: '' });
 
     const [scannerKey, setScannerKey] = useState(0);
 
@@ -226,9 +228,12 @@ const BorrowScannerDialog = ({
 
         for (const item of scannedBooks) {
             try {
+                // 注意：扫码读到的数字是“副本条码编号 (barcode_number)”，
+                // 它在每本书内部从 1 开始计数，不是数据库 BookCopy 的全局主键 id。
+                // 后端会按 (book_id, barcode_number) 解析到具体副本。
                 const payload = {
                     book_id: parseInt(item.book.id, 10),
-                    copy_id: parseInt(item.copyId, 10),
+                    barcode_number: parseInt(item.copyId, 10),
                 };
 
                 await borrowBook(payload);
@@ -271,6 +276,31 @@ const BorrowScannerDialog = ({
 
                 showSnackbar(finalMsg, 'error');
             }
+        }
+
+        // 借完汇总：成功的从扫描列表移除，让用户看到一条总结提示
+        if (succeeded.length > 0) {
+            setScannedBooks(prev => prev.filter(item => !succeeded.includes(item.raw)));
+        }
+
+        if (succeeded.length > 0 && failed.length === 0) {
+            setToast({
+                visible: true,
+                type: 'success',
+                text: `Successfully submitted ${succeeded.length} borrow request${succeeded.length > 1 ? 's' : ''}. Please wait for librarian approval.`,
+            });
+        } else if (succeeded.length > 0 && failed.length > 0) {
+            setToast({
+                visible: true,
+                type: 'warning',
+                text: `Submitted ${succeeded.length}, failed ${failed.length}. See error list for details.`,
+            });
+        } else if (failed.length > 0) {
+            setToast({
+                visible: true,
+                type: 'error',
+                text: `All ${failed.length} request${failed.length > 1 ? 's' : ''} failed. See error list for details.`,
+            });
         }
 
         setBorrowing(false);
@@ -330,6 +360,12 @@ const BorrowScannerDialog = ({
                 padding: '24px',
             }}
         >
+            <Toast
+                visible={toast.visible}
+                type={toast.type}
+                text={toast.text}
+                onClose={() => setToast((prev) => ({ ...prev, visible: false }))}
+            />
             <div
                 style={{
                     width: '100%',

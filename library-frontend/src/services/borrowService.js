@@ -1,12 +1,16 @@
 import api from './api';
 
 export const borrowService = {
-  borrowRequest: (bookId, copyId, requestedDueDate = null) =>
-    api.post('/borrow-requests', {
-      book_id: bookId,
-      copy_id: copyId,
-      requested_due_date: requestedDueDate,
-    }),
+  // 同时接受 { book_id, copy_id?, barcode_number?, requested_due_date? }
+  borrowRequest: (payload) => {
+    // 仅过滤掉 undefined，让 null 也能透传（后端按可选处理）
+    const clean = Object.fromEntries(
+      Object.entries(payload || {}).filter(
+        ([, v]) => v !== undefined
+      )
+    );
+    return api.post('/borrow-requests', clean);
+  },
   reserveRequest: (bookId) => api.post('/reserve-requests', { book_id: bookId }),
   // 支持传入额外条码信息：{ barcode, barcode_number, isbn, copy_id }
   returnRequest: (recordId, payload = {}) =>

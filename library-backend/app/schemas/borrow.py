@@ -7,7 +7,10 @@ from app.schemas.book import BookPublic
 
 class BorrowRequestCreate(BaseModel):
     book_id: int
-    copy_id: int
+    # 可选：扫码借阅会带上具体副本 ID；快速借阅（仅点按钮）不传，
+    # 后端会自动挑一个可用副本。同时兼容仅传条码 barcode_number 的场景。
+    copy_id: int | None = None
+    barcode_number: int | None = None
     requested_due_date: datetime | None = None
 
 

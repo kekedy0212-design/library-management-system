@@ -15,6 +15,26 @@ def _normalize_isbn(isbn: str | None) -> str:
     return str(isbn or "").replace("-", "").replace(" ", "").strip()
 
 
+def _to_naive_utc(dt):
+    """把带时区的 datetime 统一转成 naive UTC，避免与库内裸 datetime 比较时报错。
+
+    - None 透传
+    - tzinfo 为 None 时直接返回（视作 UTC）
+    - tzinfo 不为 None 时按 UTC 偏移转成裸 datetime
+    """
+    if dt is None:
+        return None
+    tz = getattr(dt, "tzinfo", None)
+    if tz is None:
+        return dt
+    try:
+        from datetime import timezone
+
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        return dt.replace(tzinfo=None)
+
+
 def _parse_barcode_text(barcode: str | None):
     """解析条码文本，格式: ISBN/COPY_NUMBER"""
     if not barcode:
@@ -158,27 +178,53 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
         )
         return None
 
-    # 3. 查询指定副本（加锁防并发）
-    copy = (
-        db.query(BookCopy)
-        .filter(BookCopy.id == request_in.copy_id)
-        .with_for_update()
-        .first()
-    )
+    # 3. 解析副本：支持三种入参
+    #    - copy_id：数据库主键
+    #    - barcode_number：扫码得到的副本编号（按 book_id 限定）
+    #    - 都没传：自动挑一个可用副本（兼容"快速借阅"按钮）
+    copy = None
+    if request_in.copy_id is not None:
+        copy = (
+            db.query(BookCopy)
+            .filter(BookCopy.id == request_in.copy_id)
+            .with_for_update()
+            .first()
+        )
+        if copy and copy.book_id != request_in.book_id:
+            logger.warning(
+                f"⚠️ [CRUD] 借书请求失败: 副本不属于该书 "
+                f"| 副本 ID: {copy.id} "
+                f"| 副本书籍 ID: {copy.book_id} "
+                f"| 请求书籍 ID: {request_in.book_id}"
+            )
+            return None
+    elif request_in.barcode_number is not None:
+        copy = (
+            db.query(BookCopy)
+            .filter(
+                BookCopy.book_id == request_in.book_id,
+                BookCopy.barcode_number == request_in.barcode_number,
+            )
+            .with_for_update()
+            .first()
+        )
+    else:
+        copy = (
+            db.query(BookCopy)
+            .filter(
+                BookCopy.book_id == request_in.book_id,
+                BookCopy.status == CopyStatus.AVAILABLE,
+            )
+            .with_for_update()
+            .first()
+        )
 
     if not copy:
         logger.warning(
-            f"⚠️ [CRUD] 借书请求失败: 副本不存在 " f"| 副本 ID: {request_in.copy_id}"
-        )
-        return None
-
-    # 4. 检查副本是否属于该书
-    if copy.book_id != request_in.book_id:
-        logger.warning(
-            f"⚠️ [CRUD] 借书请求失败: 副本不属于该书 "
-            f"| 副本 ID: {copy.id} "
-            f"| 副本书籍 ID: {copy.book_id} "
-            f"| 请求书籍 ID: {request_in.book_id}"
+            f"⚠️ [CRUD] 借书请求失败: 找不到可用副本 "
+            f"| 书籍 ID: {request_in.book_id} "
+            f"| copy_id: {request_in.copy_id} "
+            f"| barcode_number: {request_in.barcode_number}"
         )
         return None
 
@@ -205,7 +251,7 @@ def create_borrow_request(db: Session, user_id: int, request_in: BorrowRequestCr
         copy_id=copy.id,
         status=BorrowStatus.PENDING,
         request_date=datetime.utcnow(),
-        due_date=request_in.requested_due_date,
+        due_date=_to_naive_utc(request_in.requested_due_date),
     )
 
     db.add(copy)
@@ -519,16 +565,17 @@ def create_renew_request(db: Session, user_id: int, request_in: RenewRequestCrea
         )
         return None
 
-    if request_in.requested_due_date:
+    requested_due = _to_naive_utc(request_in.requested_due_date)
+    if requested_due:
         base_due = (
             origin.due_date
             if origin.due_date and origin.due_date > datetime.utcnow()
             else datetime.utcnow()
         )
-        if request_in.requested_due_date <= base_due:
+        if requested_due <= base_due:
             logger.warning(
                 f"⚠️ [CRUD] 续借请求失败: 期望日期不晚于当前到期日 | 原记录 ID: {request_in.borrow_record_id} | "
-                f"当前到期: {base_due} | 期望到期: {request_in.requested_due_date}"
+                f"当前到期: {base_due} | 期望到期: {requested_due}"
             )
             return None
 
@@ -538,7 +585,7 @@ def create_renew_request(db: Session, user_id: int, request_in: RenewRequestCrea
         copy_id=origin.copy_id,  # 续借时保持相同的副本
         status=BorrowStatus.PENDING,
         request_date=datetime.utcnow(),
-        due_date=request_in.requested_due_date,
+        due_date=requested_due,
         librarian_notes=f"{RENEW_NOTE_PREFIX}{request_in.borrow_record_id}",
     )
     db.add(renew_record)
