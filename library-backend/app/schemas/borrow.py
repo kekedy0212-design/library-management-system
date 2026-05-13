@@ -3,6 +3,7 @@ from datetime import datetime
 from app.models.borrow import BorrowStatus
 from app.schemas.user import UserPublic
 from app.schemas.book import BookPublic
+from app.schemas.copy import BookCopyPublic
 
 
 class BorrowRequestCreate(BaseModel):
@@ -89,4 +90,7 @@ class BorrowRecordPublic(BaseModel):
     librarian_notes: str | None
     user: UserPublic | None = None
     book: BookPublic | None = None
+    # 关联副本的完整信息（含 barcode_number，前端扫码比对要用它，
+    # 而不是 BookCopy.id —— 两者维度完全不同）
+    copy: BookCopyPublic | None = None
     model_config = ConfigDict(from_attributes=True)

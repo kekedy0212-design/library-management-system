@@ -117,7 +117,7 @@ const ReturnScannerDialog = ({
                     const existingCopyId =
                         normalizeCopyId(
                             item.copyId ||
-                            item.record?.copy_id
+                            item.record?.copy?.barcode_number
                         );
 
                     // same isbn + same copy
@@ -184,15 +184,21 @@ const ReturnScannerDialog = ({
                         return false;
                     }
 
-                    // copy-level validation
+                    // Copy-level validation:
+                    // 扫码出来的 `currentCopyId` 是“书内副本号 (barcode_number)”，
+                    // 后端 record.copy_id 是 BookCopy.id（全局主键），两者维度不同。
+                    // 用 record.copy.barcode_number 才是正确的比对维度。
+                    const recordBarcodeNumber =
+                        record.copy?.barcode_number;
+
                     if (
                         currentCopyId &&
-                        record.copy_id
+                        recordBarcodeNumber != null
                     ) {
 
                         return (
                             normalizeCopyId(
-                                record.copy_id
+                                recordBarcodeNumber
                             ) ===
                             currentCopyId
                         );
@@ -206,10 +212,33 @@ const ReturnScannerDialog = ({
             // =========================
 
             if (!matchedRecord) {
+                // Try to figure out *why* nothing matched, so the message is actionable
+                const sameIsbnRecords = borrowHistory.filter(record => {
+                    if (!record.book) return false;
+                    return normalizeIsbn(record.book.isbn) === currentIsbn;
+                });
 
-                throw new Error(
-                    `No active borrowing record found for ISBN ${parsed.isbn}`
-                );
+                let reason;
+                if (sameIsbnRecords.length === 0) {
+                    reason = `You have no record for this book (ISBN ${parsed.isbn}). It is not borrowed by your account.`;
+                } else {
+                    const statuses = Array.from(
+                        new Set(sameIsbnRecords.map(r => r.status))
+                    );
+                    if (statuses.includes('return_pending')) {
+                        reason = `A return request for this book is already submitted and awaiting librarian approval.`;
+                    } else if (statuses.includes('returned')) {
+                        reason = `You already returned this book (ISBN ${parsed.isbn}).`;
+                    } else if (statuses.every(s => s === 'pending' || s === 'rejected')) {
+                        reason = `Your previous borrow request for this book was not approved, so it is not on loan to you.`;
+                    } else if (currentCopyId) {
+                        reason = `You have borrowed this title, but not the specific copy #${currentCopyId}. Scan the copy you actually borrowed.`;
+                    } else {
+                        reason = `No active loan found for ISBN ${parsed.isbn}.`;
+                    }
+                }
+
+                throw new Error(reason);
             }
 
             navigator.vibrate?.(80);
@@ -245,7 +274,7 @@ const ReturnScannerDialog = ({
                     const copyId =
                         normalizeCopyId(
                             item.copyId ||
-                            item.record?.copy_id
+                            item.record?.copy?.barcode_number
                         );
 
                     const key =
@@ -305,7 +334,7 @@ const ReturnScannerDialog = ({
 
         if (
             !window.confirm(
-                `Submit return request for ${scannedRecords.length} book(s)?`
+                `Submit return request for ${scannedRecords.length} book(s)? A librarian needs to approve them.`
             )
         ) {
             return;
@@ -348,7 +377,7 @@ const ReturnScannerDialog = ({
             );
 
             alert(
-                `${successIds.length} return request(s) submitted successfully.`
+                `${successIds.length} return request(s) submitted. Awaiting librarian approval.`
             );
 
             onSuccess?.();

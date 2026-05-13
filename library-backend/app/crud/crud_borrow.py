@@ -72,20 +72,22 @@ def get_borrow_record(db: Session, record_id: int):
 
 
 def get_pending_requests(db: Session):
-    # 兼容旧流程：把历史 RETURN_PENDING 数据补偿为已归还，避免卡在管理员待处理中
-    reconcile_legacy_return_pending(db)
-    # 补偿机制：先尝试把可分配的预约自动分配，避免“有库存但仍是pending”的历史遗留状态
+    # 还书审批已恢复：PENDING（借/续借/预约）和 RETURN_PENDING（待还书审批）都进入馆员处理队列
     reconcile_reservations(db)
     results = (
-        db.query(BorrowRecord).filter(BorrowRecord.status == BorrowStatus.PENDING).all()
+        db.query(BorrowRecord)
+        .filter(
+            BorrowRecord.status.in_(
+                [BorrowStatus.PENDING, BorrowStatus.RETURN_PENDING]
+            )
+        )
+        .all()
     )
     logger.debug(f"📋 [CRUD] 查询待处理请求 | 待处理数: {len(results)}")
     return results
 
 
 def get_user_borrow_history(db: Session, user_id: int):
-    # 兼容旧流程：先把历史 RETURN_PENDING 数据补偿为已归还，保证读者看到真实状态
-    reconcile_legacy_return_pending(db)
     # 补偿机制：查询前先自动分配预约队列，保证读者看到的是最新状态
     reconcile_reservations(db)
     results = db.query(BorrowRecord).filter(BorrowRecord.user_id == user_id).all()
@@ -103,7 +105,6 @@ def user_has_active_borrows(db: Session, user_id: int) -> bool:
     """
     from app.models.borrow import BorrowStatus
 
-    reconcile_legacy_return_pending(db)
     reconcile_reservations(db)
 
     record = (
@@ -122,7 +123,6 @@ def user_has_active_borrows(db: Session, user_id: int) -> bool:
 
 def get_all_borrow_records(db: Session):
     """馆员查看全量借阅记录（含借阅/预约/续借/归还历史）"""
-    reconcile_legacy_return_pending(db)
     reconcile_reservations(db)
     results = (
         db.query(BorrowRecord)
@@ -350,11 +350,16 @@ def create_return_request(
     barcode_number: int | None = None,
     barcode: str | None = None,
 ):
-    """直接归还书籍（无需管理员审批）"""
-    from app.models.copy import BookCopy, CopyStatus
+    """提交还书请求（需要图书管理员审批）。
+
+    校验通过后只把记录置为 `RETURN_PENDING` 并记下提交时间。
+    副本状态、`available_copies`、预约队列自动分配全部留给
+    `process_return_request` 在馆员批准时统一执行。
+    """
+    from app.models.copy import BookCopy as _BookCopy
 
     logger.debug(
-        f"📥 [CRUD] 开始处理直接还书 | 用户 ID: {user_id} | 记录 ID: {record_id}"
+        f"📥 [CRUD] 开始提交还书请求 | 用户 ID: {user_id} | 记录 ID: {record_id}"
     )
 
     record = (
@@ -371,13 +376,20 @@ def create_return_request(
     )
     if not record:
         logger.warning(
-            f"⚠️ [CRUD] 还书请求失败: 记录不存在或状态不是APPROVED | 记录 ID: {record_id}"
+            f"⚠️ [CRUD] 还书请求失败: 记录不存在或状态不可还书 | 记录 ID: {record_id}"
         )
         return None
 
+    # 已经在等馆员审批了，幂等返回即可。
+    if record.status == BorrowStatus.RETURN_PENDING:
+        logger.info(
+            f"ℹ️ [CRUD] 还书请求已存在 | 记录 ID: {record_id} | 状态: RETURN_PENDING"
+        )
+        return record
+
     # 二次一致性校验：后端独立校验，接受三种输入方式：
     # 1) 前端提供内部 copy_id（BookCopy.id）
-    # 2) 前端提供 barcode_number（副本号）和/或 barcode（ISBN/COPY_NUMBER），在当前借记录对应的书中查找对应副本
+    # 2) 前端提供 barcode_number（副本号）和/或 barcode（ISBN/COPY_NUMBER）
     # 3) 两者都提供时会交叉校验
     parsed_isbn, parsed_barcode_number = _parse_barcode_text(barcode)
     expected_isbn = parsed_isbn or isbn
@@ -385,16 +397,11 @@ def create_return_request(
         parsed_barcode_number if parsed_barcode_number is not None else barcode_number
     )
 
-    # 如果没有提供内部 copy_id，则尝试使用 book_id + barcode_number 查找对应的 BookCopy
-    from app.models.copy import BookCopy as _BookCopy
-
     if copy_id is None:
         if expected_barcode_number is None:
             raise ValueError(
                 "copy_id or barcode/barcode_number is required for return request"
             )
-
-        # 查找同一本书（record.book_id）下的副本，匹配 barcode_number
         found_copy = (
             db.query(_BookCopy)
             .filter(
@@ -409,7 +416,6 @@ def create_return_request(
             )
         copy_id = found_copy.id
 
-    # 此时 copy_id 应指向内部 BookCopy.id，继续交叉校验
     if record.copy_id is None or record.copy_id != copy_id:
         raise ValueError(
             "Copy consistency check failed: provided copy does not match borrow record"
@@ -441,45 +447,21 @@ def create_return_request(
             )
 
     try:
-        book = (
-            db.query(Book).filter(Book.id == record.book_id).with_for_update().first()
-        )
-
-        # 更新副本状态为可用
-        if copy:
-            copy.status = CopyStatus.AVAILABLE
-            db.add(copy)
-            logger.debug(
-                f"🔄 [CRUD] 副本状态更新为可用 | 副本ID: {record.copy_id} | 副本号: {copy.barcode_number}"
-            )
-
-        book.available_copies += 1
-        # 旧流程中可能已经存在 return_request_date，这里保持幂等
-        record.return_request_date = record.return_request_date or datetime.utcnow()
-        record.status = BorrowStatus.RETURNED
-        record.actual_return_date = datetime.utcnow()
-
-        # 直接归还后也触发预约队列自动分配
-        auto_assigned_records = assign_reservations_if_available(
-            db, book, reason="AUTO_ASSIGNED_AFTER_DIRECT_RETURN"
-        )
-        db.add(book)
+        record.return_request_date = datetime.utcnow()
+        record.status = BorrowStatus.RETURN_PENDING
         db.add(record)
         db.commit()
         db.refresh(record)
-        if auto_assigned_records:
-            logger.info(
-                f"✅ [CRUD] 直接还书成功并自动分配预约 | 记录 ID: {record_id} | 用户 ID: {user_id} | "
-                f"分配数量: {len(auto_assigned_records)} | 当前库存: {book.available_copies}"
-            )
-        else:
-            logger.info(
-                f"✅ [CRUD] 直接还书成功 | 记录 ID: {record_id} | 用户 ID: {user_id} | 当前库存: {book.available_copies}"
-            )
+        logger.info(
+            f"✅ [CRUD] 还书请求已提交 | 记录 ID: {record_id} | 用户 ID: {user_id} | 等待管理员审批"
+        )
     except Exception as e:
-        logger.error(f"❌ [CRUD] 直接还书异常 | 记录 ID: {record_id} | 错误: {str(e)}")
+        logger.error(
+            f"❌ [CRUD] 提交还书请求异常 | 记录 ID: {record_id} | 错误: {str(e)}"
+        )
         db.rollback()
         raise
+
     return record
 
 

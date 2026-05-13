@@ -58,17 +58,17 @@ const BorrowHistory = () => {
   }, [visibleHistory]);
 
   const handleReturn = async (recordId) => {
-    if (!window.confirm('Are you sure you want to request to return this book?')) {
+    if (!window.confirm('Submit a return request for this book? A librarian needs to approve it.')) {
       return;
     }
 
     setReturnLoading(recordId);
     try {
       await borrowService.returnRequest(recordId);
-      alert('Book returned successfully.');
+      alert('Return request submitted. Awaiting librarian approval.');
       await fetchHistory();
     } catch (err) {
-      alert(`Return failed: ${err.response?.data?.detail || err.message}`);
+      alert(`Return request failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setReturnLoading(null);
     }
@@ -97,7 +97,7 @@ const BorrowHistory = () => {
       alert('Please select at least one borrowed book.');
       return;
     }
-    if (!window.confirm(`Submit return request for ${selectedReturnIds.length} book(s)?`)) {
+    if (!window.confirm(`Submit return request for ${selectedReturnIds.length} book(s)? A librarian needs to approve them.`)) {
       return;
     }
 
@@ -105,11 +105,11 @@ const BorrowHistory = () => {
     try {
       const response = await borrowService.returnRequestBatch(selectedReturnIds);
       const { success_count, failure_count } = response.data;
-      alert(`Batch return completed. Success: ${success_count}, Failed: ${failure_count}`);
+      alert(`Batch return requests submitted. Success: ${success_count}, Failed: ${failure_count}. Awaiting librarian approval.`);
       setSelectedReturnIds([]);
       await fetchHistory();
     } catch (err) {
-      alert(`Batch return failed: ${err.response?.data?.detail || err.message}`);
+      alert(`Batch return request failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setBatchReturning(false);
     }
@@ -405,6 +405,7 @@ const StatusBadge = ({ status, notes = '' }) => {
   const colors = {
     pending: { bg: '#fff7e6', text: '#b26b00', label: 'Pending' },
     approved: { bg: '#e8f5e9', text: '#2e7d32', label: 'On Loan' },
+    return_pending: { bg: '#e3f2fd', text: '#0d47a1', label: 'Return Pending' },
     returned: { bg: '#f0f0f0', text: '#555555', label: 'Returned' },
     rejected: { bg: '#f9e8e8', text: '#b3261e', label: 'Rejected' }
   };
