@@ -351,7 +351,7 @@ const ReturnScannerDialog = ({
                         new Set(sameIsbnRecords.map(r => r.status))
                     );
                     if (statuses.includes('return_pending')) {
-                        reason = `A return request for this book is already submitted and awaiting librarian approval.`;
+                        reason = `This book is no longer on loan (return in progress or completed).`;
                     } else if (statuses.includes('returned')) {
                         reason = `You already returned this book (ISBN ${parsed.isbn}).`;
                     } else if (statuses.every(s => s === 'pending' || s === 'rejected')) {
@@ -395,7 +395,7 @@ const ReturnScannerDialog = ({
             ]);
 
             showSnackbar(
-                `"${matchedRecord.book?.title}" added successfully.`,
+                `"${matchedRecord.book?.title}" added to return list.`,
                 'success'
             );
 
@@ -442,7 +442,7 @@ const ReturnScannerDialog = ({
 
             if (
                 !window.confirm(
-                    `Submit return request for ${scannedRecords.length} book(s)? A librarian needs to approve them.`
+                    `Return ${scannedRecords.length} book(s) now?`
                 )
             ) {
                 return;
@@ -454,11 +454,13 @@ const ReturnScannerDialog = ({
 
             const failedMessages = [];
 
+            let overdueFineCount = 0;
+
             for (const item of scannedRecords) {
 
                 try {
 
-                    await borrowService
+                    const response = await borrowService
                         .returnRequest(
                             item.record.id,
                             {
@@ -475,6 +477,10 @@ const ReturnScannerDialog = ({
                                     item.isbn,
                             }
                         );
+
+                    if (response.data?.overdue_fine_created) {
+                        overdueFineCount += 1;
+                    }
 
                     successIds.push(
                         item.record.id
@@ -542,24 +548,35 @@ const ReturnScannerDialog = ({
                 failedMessages.length === 0
             ) {
 
-                showSnackbar(
-                    'All return requests submitted successfully.',
-                    'success'
-                );
+                if (overdueFineCount > 0) {
+                    showSnackbar(
+                        `Return complete. ${overdueFineCount} overdue fine(s) created (10 CNY each). Pay on the Fines page before borrowing again.`,
+                        'warning'
+                    );
+                } else {
+                    showSnackbar(
+                        'All books returned successfully.',
+                        'success'
+                    );
+                }
 
             } else if (
                 successIds.length === 0
             ) {
 
                 showSnackbar(
-                    'All return requests failed.',
+                    'All returns failed.',
                     'error'
                 );
 
             } else {
 
+                const fineHint =
+                    overdueFineCount > 0
+                        ? ` ${overdueFineCount} return(s) created overdue fines.`
+                        : '';
                 showSnackbar(
-                    `${successIds.length} succeeded, ${failedMessages.length} failed.`,
+                    `${successIds.length} succeeded, ${failedMessages.length} failed.${fineHint}`,
                     'warning'
                 );
             }
@@ -656,7 +673,7 @@ const ReturnScannerDialog = ({
                                         'var(--md-sys-color-on-surface-variant)',
                                 }}
                             >
-                                Scan multiple borrowed books and submit return requests together.
+                                Scan multiple borrowed books and return them together.
                             </p>
                         </div>
 

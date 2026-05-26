@@ -5,6 +5,8 @@ import { useBorrow } from '../../hooks/useBorrow';
 import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import MdCard from '../../components/MdCard';
+import RatingBadge from '../../components/RatingBadge';
+import RecommendedBooks from '../../components/RecommendedBooks';
 import BorrowScannerDialog from '../../components/BorrowScannerDialog';
 import Toast from '../../components/Toast';
 
@@ -274,6 +276,13 @@ const BookList = () => {
           </div>
         )}
 
+        <MdCard variant="filled" style={{ padding: '20px', marginBottom: '24px' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '1.1rem', fontWeight: '500' }}>
+            Recommended For You
+          </h3>
+          <RecommendedBooks limit={6} compact />
+        </MdCard>
+
         {/* Result Count */}
         <div
           style={{
@@ -367,6 +376,11 @@ const BookList = () => {
 
                     <Badge
                       label={`${book.available_copies || 0} copies`}
+                    />
+
+                    <RatingBadge
+                      average={book.average_rating}
+                      count={book.rating_count ?? 0}
                     />
                   </div>
                 </div>

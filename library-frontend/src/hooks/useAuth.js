@@ -37,7 +37,7 @@ export const useAuth = () => {
       }));
       return response;
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || err.message || '登录失败';
+      const errorMsg = err.response?.data?.detail || err.message || 'Login failed';
       dispatch(loginFailure(errorMsg));
       throw new Error(errorMsg);
     }

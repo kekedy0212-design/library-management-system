@@ -8,6 +8,7 @@ import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import MdCard from '../../components/MdCard';
 import ReturnScannerDialog from '../../components/ReturnScannerDialog';
+import fineService from '../../services/fineService';
 
 const BorrowHistory = () => {
   const dispatch = useDispatch();
@@ -18,6 +19,7 @@ const BorrowHistory = () => {
   const [selectedReturnIds, setSelectedReturnIds] = useState([]);
   const [renewLoading, setRenewLoading] = useState(null);
   const [returnScannerOpen, setReturnScannerOpen] = useState(false);
+  const [unpaidFineSummary, setUnpaidFineSummary] = useState(null);
 
   const isRenewRequestRecord = useCallback(
     (record) => (record?.librarian_notes || '').startsWith('__RENEW__:'),
@@ -43,6 +45,12 @@ const BorrowHistory = () => {
   }, [fetchHistory]);
 
   useEffect(() => {
+    fineService.getMyFines()
+      .then((res) => setUnpaidFineSummary(res.data))
+      .catch(() => setUnpaidFineSummary(null));
+  }, [borrowHistory]);
+
+  useEffect(() => {
     const eligibleIds = new Set(
       visibleHistory
         .filter(record => record.status === 'approved')
@@ -58,17 +66,24 @@ const BorrowHistory = () => {
   }, [visibleHistory]);
 
   const handleReturn = async (recordId) => {
-    if (!window.confirm('Submit a return request for this book? A librarian needs to approve it.')) {
+    if (!window.confirm('Return this book now?')) {
       return;
     }
 
     setReturnLoading(recordId);
     try {
-      await borrowService.returnRequest(recordId);
-      alert('Return request submitted. Awaiting librarian approval.');
+      const response = await borrowService.returnRequest(recordId);
+      const data = response.data;
+      if (data?.overdue_fine_created && data?.fine_message) {
+        alert(`${data.fine_message}\n\nReturn completed.`);
+      } else {
+        alert('Book returned successfully.');
+      }
       await fetchHistory();
+      const fineRes = await fineService.getMyFines();
+      setUnpaidFineSummary(fineRes.data);
     } catch (err) {
-      alert(`Return request failed: ${err.response?.data?.detail || err.message}`);
+      alert(`Return failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setReturnLoading(null);
     }
@@ -97,7 +112,7 @@ const BorrowHistory = () => {
       alert('Please select at least one borrowed book.');
       return;
     }
-    if (!window.confirm(`Submit return request for ${selectedReturnIds.length} book(s)? A librarian needs to approve them.`)) {
+    if (!window.confirm(`Return ${selectedReturnIds.length} book(s) now?`)) {
       return;
     }
 
@@ -105,7 +120,7 @@ const BorrowHistory = () => {
     try {
       const response = await borrowService.returnRequestBatch(selectedReturnIds);
       const { success_count, failure_count } = response.data;
-      alert(`Batch return requests submitted. Success: ${success_count}, Failed: ${failure_count}. Awaiting librarian approval.`);
+      alert(`Batch return completed. Success: ${success_count}, Failed: ${failure_count}.`);
       setSelectedReturnIds([]);
       await fetchHistory();
     } catch (err) {
@@ -162,6 +177,22 @@ const BorrowHistory = () => {
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px' }}>
+      {unpaidFineSummary?.has_unpaid && (
+        <div
+          style={{
+            marginBottom: '20px',
+            padding: '14px 16px',
+            borderRadius: '12px',
+            backgroundColor: 'var(--md-sys-color-error-container)',
+            color: 'var(--md-sys-color-on-error-container)',
+          }}
+        >
+          You have {unpaidFineSummary.unpaid_count} unpaid overdue fine
+          {unpaidFineSummary.unpaid_count !== 1 ? 's' : ''} (total ¥
+          {unpaidFineSummary.unpaid_total}). Pay them on the Fines page before
+          borrowing other books.
+        </div>
+      )}
       <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ fontSize: '2rem', fontWeight: '400', margin: 0 }}>Borrowing Activity</h2>

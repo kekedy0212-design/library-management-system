@@ -140,14 +140,14 @@ const DepositCenter = () => {
         if (data?.status === 'refunded') {
           if (timer) clearInterval(timer);
           setRefunding(false);
-          setToast({ visible: true, type: 'success', text: '退款成功，押金已退回。' });
+          setToast({ visible: true, type: 'success', text: 'Refund successful. Deposit has been returned.' });
           return;
         }
 
         if (attempt >= maxAttempts) {
           if (timer) clearInterval(timer);
           setRefunding(false);
-          setToast({ visible: true, type: 'warning', text: '退款正在处理中，请稍后查看状态。' });
+          setToast({ visible: true, type: 'warning', text: 'Refund is processing. Please check status shortly.' });
         }
       };
 
@@ -155,7 +155,7 @@ const DepositCenter = () => {
       timer = setInterval(checkStatus, intervalMs);
 
     } catch (err) {
-      setToast({ visible: true, type: 'error', text: `退款失败: ${err.response?.data?.detail || err.message}` });
+      setToast({ visible: true, type: 'error', text: `Refund failed: ${err.response?.data?.detail || err.message}` });
     } finally {
       setRefunding(false);
     }

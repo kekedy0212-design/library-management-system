@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from app.models.borrow import BorrowStatus
@@ -76,6 +77,13 @@ class BatchRequestProcessResponse(BaseModel):
     results: list[BatchRequestProcessResult]
 
 
+class ReturnRequestResponse(BaseModel):
+    record: "BorrowRecordPublic"
+    overdue_fine_created: bool = False
+    fine_amount: Decimal | None = None
+    fine_message: str | None = None
+
+
 class BorrowRecordPublic(BaseModel):
     id: int
     user_id: int
@@ -94,3 +102,6 @@ class BorrowRecordPublic(BaseModel):
     # 而不是 BookCopy.id —— 两者维度完全不同）
     copy: BookCopyPublic | None = None
     model_config = ConfigDict(from_attributes=True)
+
+
+ReturnRequestResponse.model_rebuild()

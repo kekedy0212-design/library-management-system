@@ -10,6 +10,9 @@ from app.models.user import User, UserRole
 from app.crud.crud_user import get_user
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login", auto_error=False
+)
 
 # 权限等级映射（数字越大权限越高）
 ROLE_LEVEL = {
@@ -78,6 +81,28 @@ def get_current_user(
     
     print(f">>> Authenticated user: {user.username} (role={user.role.value})")
     return user
+
+def get_current_user_optional(
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+    db: Session = Depends(get_db),
+) -> User | None:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str | None = payload.get("sub")
+        if not username:
+            return None
+    except JWTError:
+        return None
+
+    from app.crud.crud_user import get_user_by_username
+
+    user = get_user_by_username(db, username)
+    if user is None or not user.is_active:
+        return None
+    return user
+
 
 def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)]

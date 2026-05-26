@@ -2,20 +2,45 @@ from typing import List, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from decimal import Decimal
 from app.schemas.borrow import (
     BorrowRequestCreate, ReserveRequestCreate, ReturnRequestCreate, RenewRequestCreate,
-    RequestProcess, BorrowRecordPublic,
+    RequestProcess, BorrowRecordPublic, ReturnRequestResponse,
     BatchRequestProcess, BatchRequestProcessResponse,
     BatchReturnRequestCreate, BatchReturnRequestResponse
 )
 from app.crud import crud_borrow
 from app.crud import crud_deposit
+from app.crud import crud_fine
+from app.core.config import settings
+from app.models.fine import FineStatus
 from app.api.deps import get_current_active_user, get_current_librarian
 from app.models.user import User
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _build_return_response(db: Session, record) -> ReturnRequestResponse:
+    fine = crud_fine.get_fine_by_borrow_record(db, record.id)
+    overdue = bool(fine and fine.status == FineStatus.UNPAID)
+    fine_message = None
+    if overdue:
+        fine_message = (
+            f"This book was returned after the due date. "
+            f"Please pay the {settings.OVERDUE_FINE_AMOUNT} CNY overdue fine on the Fines page "
+            "before borrowing other books."
+        )
+    return ReturnRequestResponse(
+        record=BorrowRecordPublic.model_validate(record),
+        overdue_fine_created=overdue,
+        fine_amount=(
+            Decimal(str(settings.OVERDUE_FINE_AMOUNT)) if overdue else None
+        ),
+        fine_message=fine_message,
+    )
+
 
 @router.post("/borrow-requests", response_model=BorrowRecordPublic)
 def request_borrow(
@@ -48,15 +73,15 @@ def request_borrow(
     logger.info(f"✅ [借书请求成功] 用户 '{current_user.username}' 成功创建借书请求 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}")
     return record
 
-@router.post("/return-requests", response_model=BorrowRecordPublic)
+@router.post("/return-requests", response_model=ReturnRequestResponse)
 def request_return(
     request_in: ReturnRequestCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """提交还书请求（需要图书管理员审批后才真正归还）"""
+    """用户直接还书（无需管理员审批）"""
     logger.info(
-        f"📥 [还书申请] 用户 '{current_user.username}' (ID: {current_user.id}) 提交还书申请 | 借记录 ID: {request_in.borrow_record_id}"
+        f"📥 [直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 还书 | 借记录 ID: {request_in.borrow_record_id}"
     )
 
     try:
@@ -71,23 +96,23 @@ def request_return(
         )
     except ValueError as e:
         logger.warning(
-            f"❌ [还书申请失败] 一致性校验失败 | 用户: {current_user.username} | "
+            f"❌ [直接还书失败] 一致性校验失败 | 用户: {current_user.username} | "
             f"记录 ID: {request_in.borrow_record_id} | 原因: {str(e)}"
         )
         raise HTTPException(status_code=400, detail=str(e))
 
     if not record:
         logger.warning(
-            f"❌ [还书申请失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}"
+            f"❌ [直接还书失败] 无效的借记录 | 用户: {current_user.username} | 记录 ID: {request_in.borrow_record_id}"
         )
         raise HTTPException(
             status_code=400, detail="Invalid borrow record or book not borrowed"
         )
 
     logger.info(
-        f"✅ [还书申请已提交] 用户 '{current_user.username}' 提交还书申请 | 记录 ID: {record.id} | 书籍 ID: {record.book_id} | 等待审批"
+        f"✅ [直接还书成功] 用户 '{current_user.username}' 已归还书籍 | 记录 ID: {record.id} | 书籍 ID: {record.book_id}"
     )
-    return record
+    return _build_return_response(db, record)
 
 @router.post("/reserve-requests", response_model=BorrowRecordPublic)
 def request_reserve(
@@ -99,7 +124,11 @@ def request_reserve(
     if not crud_deposit.has_paid_deposit(db, current_user.id):
         raise HTTPException(status_code=403, detail="Deposit required before reservation")
 
-    record = crud_borrow.create_reserve_request(db, current_user.id, request_in)
+    try:
+        record = crud_borrow.create_reserve_request(db, current_user.id, request_in)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not record:
         raise HTTPException(status_code=400, detail="Reservation not available for this book")
     return record
@@ -122,12 +151,12 @@ def request_return_batch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """用户批量提交还书申请（需要图书管理员审批后才真正归还）"""
+    """用户批量直接还书（无需管理员审批）"""
     if not request_in.borrow_record_ids:
         raise HTTPException(status_code=400, detail="borrow_record_ids cannot be empty")
 
     logger.info(
-        f"📥 [批量还书申请] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量提交还书申请 | "
+        f"📥 [批量直接还书] 用户 '{current_user.username}' (ID: {current_user.id}) 开始批量还书 | "
         f"数量: {len(request_in.borrow_record_ids)}"
     )
 
@@ -165,7 +194,7 @@ def request_return_batch(
             results.append({
                 "borrow_record_id": record_id,
                 "success": True,
-                "message": "Return request submitted. Awaiting librarian approval.",
+                "message": "Book returned successfully.",
                 "record": BorrowRecordPublic.model_validate(record).model_dump()
             })
         else:
@@ -179,8 +208,8 @@ def request_return_batch(
     total = len(request_in.borrow_record_ids)
     failure_count = total - success_count
     logger.info(
-        f"✅ [批量还书申请完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量提交还书申请完成 | "
-        f"总数: {total} | 成功: {success_count} | 失败: {failure_count} | 等待审批"
+        f"✅ [批量直接还书完成] 用户 '{current_user.username}' (ID: {current_user.id}) 批量还书完成 | "
+        f"总数: {total} | 成功: {success_count} | 失败: {failure_count}"
     )
     return {
         "total": total,

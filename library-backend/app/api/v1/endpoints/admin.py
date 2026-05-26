@@ -1,11 +1,35 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_admin
+from app.core.database import get_db
+from app.crud import crud_revenue
 from app.models.user import User
+from app.schemas.revenue import DailyRevenueResponse
 from app.core.logger import LOG_FILE, get_logger
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/revenue/daily", response_model=DailyRevenueResponse)
+def read_daily_revenue(
+    target_date: date | None = Query(
+        None,
+        alias="date",
+        description="Calendar day in UTC (YYYY-MM-DD). Defaults to today.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Admin: daily totals for successful deposit and fine payments."""
+    logger.info(
+        f"📊 [Daily revenue] Admin '{current_user.username}' requested revenue for {target_date or 'today'}"
+    )
+    return crud_revenue.get_daily_revenue(db, target_date)
 
 @router.get("/logs")
 def read_logs(

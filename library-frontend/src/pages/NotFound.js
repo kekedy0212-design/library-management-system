@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom';
 const NotFound = () => {
   return (
     <div className="card" style={{ textAlign: 'center' }}>
-      <h2>404 - 页面未找到</h2>
-      <p>抱歉，您访问的页面不存在。</p>
-      <Link to="/" className="btn">返回首页</Link>
+      <h2>404 - Page Not Found</h2>
+      <p>Sorry, the page you are looking for does not exist.</p>
+      <Link to="/" className="btn">Back to Home</Link>
     </div>
   );
 };

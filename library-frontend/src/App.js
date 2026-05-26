@@ -12,9 +12,11 @@ import BookForm from './pages/Books/BookForm';
 import UserList from './pages/Users/UserList';
 import BorrowHistory from './pages/Borrow/BorrowHistory';
 import Logs from './pages/Admin/Logs';
+import DailyRevenue from './pages/Admin/DailyRevenue';
 import RequestApproval from './pages/Admin/RequestApproval';
 import BorrowRecords from './pages/Admin/BorrowRecords';
 import DepositCenter from './pages/Deposit/DepositCenter';
+import FinesCenter from './pages/Fines/FinesCenter';
 import NotFound from './pages/NotFound';
 import './styles/App.css';
 import './styles/css/light.css';
@@ -46,7 +48,9 @@ function App() {
           <Route path="/users" element={<ProtectedRoute requiredRole="librarian"><UserList /></ProtectedRoute>} />
           <Route path="/borrow" element={<ProtectedRoute><BorrowHistory /></ProtectedRoute>} />
           <Route path="/deposit" element={<ProtectedRoute><DepositCenter /></ProtectedRoute>} />
+          <Route path="/fines" element={<ProtectedRoute><FinesCenter /></ProtectedRoute>} />
           <Route path="/admin/logs" element={<ProtectedRoute requiredRole="admin"><Logs /></ProtectedRoute>} />
+          <Route path="/admin/revenue" element={<ProtectedRoute requiredRole="admin"><DailyRevenue /></ProtectedRoute>} />
           <Route path="/admin/requests" element={<ProtectedRoute requiredRole="librarian"><RequestApproval /></ProtectedRoute>} />
           <Route path="/admin/borrow-records" element={<ProtectedRoute requiredRole="librarian"><BorrowRecords /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />

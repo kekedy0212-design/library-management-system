@@ -24,12 +24,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
     DEPOSIT_AMOUNT: float = float(os.getenv("DEPOSIT_AMOUNT", 99.00))
+    OVERDUE_FINE_AMOUNT: float = float(os.getenv("OVERDUE_FINE_AMOUNT", 10.00))
 
     # Alipay sandbox / production shared settings
     ALIPAY_APP_ID: str = os.getenv("ALIPAY_APP_ID", "")
     ALIPAY_GATEWAY: str = os.getenv("ALIPAY_GATEWAY", "https://openapi-sandbox.dl.alipaydev.com/gateway.do")
     ALIPAY_NOTIFY_URL: str = os.getenv("ALIPAY_NOTIFY_URL", "")
     ALIPAY_RETURN_URL: str = os.getenv("ALIPAY_RETURN_URL", "")
+    ALIPAY_FINE_RETURN_URL: str = os.getenv(
+        "ALIPAY_FINE_RETURN_URL", "http://localhost:3000/fines"
+    )
     ALIPAY_APP_PRIVATE_KEY: str = os.getenv("ALIPAY_APP_PRIVATE_KEY", "")
     ALIPAY_PUBLIC_KEY: str = os.getenv("ALIPAY_PUBLIC_KEY", "")
     ALIPAY_DEBUG: bool = os.getenv("ALIPAY_DEBUG", "true").lower() == "true"

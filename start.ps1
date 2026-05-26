@@ -62,10 +62,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Optional: comma-separated frontend origins if not localhost (e.g. http://192.168.1.5:3000)
 CORS_ORIGINS=
 DEPOSIT_AMOUNT=99.00
+OVERDUE_FINE_AMOUNT=10.00
 ALIPAY_APP_ID=
 ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
 ALIPAY_NOTIFY_URL=
 ALIPAY_RETURN_URL=http://localhost:3000/deposit
+ALIPAY_FINE_RETURN_URL=http://localhost:3000/fines
 ALIPAY_APP_PRIVATE_KEY=
 ALIPAY_PUBLIC_KEY=
 ALIPAY_DEBUG=true

@@ -1,11 +1,37 @@
+/** Backend stores UTC; display in China Standard Time (UTC+8). */
+const BEIJING_TZ = 'Asia/Shanghai';
+
+const parseServerDate = (dateString) => {
+  if (!dateString) return null;
+  const raw = String(dateString).trim();
+  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 export const formatDate = (dateString) => {
-  if (!dateString) return '';
-  return new Date(dateString).toLocaleDateString('zh-CN');
+  const date = parseServerDate(dateString);
+  if (!date) return '';
+  return date.toLocaleDateString('zh-CN', {
+    timeZone: BEIJING_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 };
 
 export const formatDateTime = (dateString) => {
-  if (!dateString) return '';
-  return new Date(dateString).toLocaleString('zh-CN');
+  const date = parseServerDate(dateString);
+  if (!date) return '';
+  return date.toLocaleString('zh-CN', {
+    timeZone: BEIJING_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 };
 
 export const truncateText = (text, maxLength) => {
@@ -27,12 +53,12 @@ export const getStatusColor = (status) => {
 
 export const getStatusText = (status) => {
   const texts = {
-    pending: '待审批',
-    approved: '已借出',
-    rejected: '已拒绝',
-    return_pending: '待验收',
-    returned: '已归还',
-    overdue: '逾期',
+    pending: 'Pending',
+    approved: 'Borrowed',
+    rejected: 'Rejected',
+    return_pending: 'Return pending',
+    returned: 'Returned',
+    overdue: 'Overdue',
   };
   return texts[status] || status;
 };

@@ -31,4 +31,6 @@ class BookInDB(BookBase):
     model_config = ConfigDict(from_attributes=True)
 
 class BookPublic(BookInDB):
-    pass
+    average_rating: float | None = None
+    rating_count: int = 0
+    user_rating: int | None = None

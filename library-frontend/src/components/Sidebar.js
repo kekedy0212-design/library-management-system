@@ -56,10 +56,12 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     { label: 'Dashboard', path: '/', icon: 'dashboard', visible: true },
     { label: 'Books', path: '/books', icon: 'library_books', visible: true },
     { label: 'Deposit', path: '/deposit', icon: 'account_balance_wallet', visible: true },
+    { label: 'Fines', path: '/fines', icon: 'gavel', visible: true },
     { label: 'Users', path: '/users', icon: 'group', visible: isLibrarian() || isAdmin() },
     { label: 'History', path: '/borrow', icon: 'history', visible: true },
     { label: 'Requests', path: '/admin/requests', icon: 'pending_actions', visible: isLibrarian() || isAdmin() },
     { label: 'Borrow Records', path: '/admin/borrow-records', icon: 'receipt_long', visible: isLibrarian() || isAdmin() },
+    { label: 'Revenue', path: '/admin/revenue', icon: 'payments', visible: isAdmin() },
     { label: 'Logs', path: '/admin/logs', icon: 'settings_ethernet', visible: isAdmin() },
   ];
 

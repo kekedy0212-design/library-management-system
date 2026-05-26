@@ -4,12 +4,38 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.book import BookCreate, BookUpdate, BookPublic
 from app.crud import crud_book
-from app.api.deps import get_current_librarian
-from app.models.user import User
+from app.api.deps import (
+    get_current_active_user,
+    get_current_librarian,
+    get_current_user_optional,
+)
+from app.models.user import User, UserRole
+from app.schemas.rating import BookRatingSummary, RatingUpsert
+from app.schemas.recommendation import BookRecommendationResponse
+from app.schemas.review import BookReviewPublic, ReviewUpsert
+from app.crud import crud_rating, crud_review
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/recommendations", response_model=BookRecommendationResponse)
+def get_book_recommendations(
+    limit: int = Query(8, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Personalized book recommendations based on reader ratings."""
+    items, strategy = crud_rating.build_recommendation_response(
+        db, current_user.id, limit
+    )
+    logger.info(
+        f"📚 [Recommendations] User '{current_user.username}' | "
+        f"strategy={strategy} | count={len(items)}"
+    )
+    return BookRecommendationResponse(items=items, strategy=strategy)
+
 
 @router.get("/", response_model=List[BookPublic])
 def search_books(
@@ -23,7 +49,104 @@ def search_books(
         logger.debug(f"🔍 [书籍搜索] 关键词: '{q}' | 分页: skip={skip}, limit={limit}")
     books = crud_book.get_books(db, skip=skip, limit=limit, search=q)
     logger.debug(f"✅ [书籍查询] 返回 {len(books)} 本书籍 | 搜索词: {q or '无'}")
-    return books
+    return crud_rating.build_books_public(db, books, user_id=None)
+
+@router.get("/{book_id}/reviews", response_model=list[BookReviewPublic])
+def list_book_reviews(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    """List all reviews for a book (newest first)."""
+    book = crud_book.get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    user_id = current_user.id if current_user else None
+    reviews = crud_review.list_reviews_for_book(db, book_id)
+    return [crud_review.review_to_public(r, user_id) for r in reviews]
+
+
+@router.put("/{book_id}/reviews", response_model=BookReviewPublic)
+def upsert_book_review(
+    book_id: int,
+    review_in: ReviewUpsert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create or update the current user's review for a book."""
+    book = crud_book.get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    review = crud_review.upsert_review(
+        db, current_user.id, book_id, review_in.content
+    )
+    logger.info(
+        f"📝 [Book review] User '{current_user.username}' reviewed book ID {book_id}"
+    )
+    return crud_review.review_to_public(review, current_user.id)
+
+
+@router.delete("/{book_id}/reviews/{review_id}")
+def delete_book_review(
+    book_id: int,
+    review_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Delete a review. Authors may delete their own; librarians and admins may delete any."""
+    review = crud_review.get_review(db, review_id)
+    if not review or review.book_id != book_id:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    is_staff = current_user.role in (UserRole.LIBRARIAN, UserRole.ADMIN)
+    is_author = review.user_id == current_user.id
+    if not is_staff and not is_author:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete your own review",
+        )
+
+    crud_review.delete_review(db, review)
+    logger.info(
+        f"🗑️ [Book review] User '{current_user.username}' deleted review ID {review_id}"
+    )
+    return {"msg": "Review deleted successfully"}
+
+
+@router.get("/{book_id}/rating", response_model=BookRatingSummary)
+def get_book_rating(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    """Get average rating and optional current user's rating."""
+    book = crud_book.get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    user_id = current_user.id if current_user else None
+    return crud_rating.get_book_rating_summary(db, book_id, user_id)
+
+
+@router.put("/{book_id}/rating", response_model=BookRatingSummary)
+def rate_book(
+    book_id: int,
+    rating_in: RatingUpsert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Submit or update the current user's 1–5 star rating for a book."""
+    book = crud_book.get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    crud_rating.upsert_rating(db, current_user.id, book_id, rating_in.score)
+    logger.info(
+        f"⭐ [Book rating] User '{current_user.username}' rated book ID {book_id} "
+        f"with {rating_in.score} stars"
+    )
+    return crud_rating.get_book_rating_summary(db, book_id, current_user.id)
+
 
 @router.get("/{book_id}", response_model=BookPublic)
 def get_book(book_id: int, db: Session = Depends(get_db)):
@@ -34,7 +157,7 @@ def get_book(book_id: int, db: Session = Depends(get_db)):
         logger.warning(f"⚠️ [书籍详情] 书籍未找到 | ID: {book_id}")
         raise HTTPException(status_code=404, detail="Book not found")
     logger.debug(f"✅ [书籍详情] 找到书籍: {book.title}")
-    return book
+    return crud_rating.build_book_public(db, book, user_id=None)
 
 @router.post("/", response_model=BookPublic)
 def create_book(

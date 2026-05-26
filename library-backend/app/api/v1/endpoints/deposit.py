@@ -20,6 +20,7 @@ from app.schemas.deposit import (
 )
 from app.crud import crud_deposit
 from app.crud import crud_borrow
+from app.crud import crud_fine
 import json
 import logging
 
@@ -130,6 +131,32 @@ async def alipay_notify(request: Request, db: Session = Depends(get_db)):
 
     if not verified:
         logger.warning(f"⚠️ [支付宝回调] 验签未通过 | out_trade_no: {out_trade_no}")
+        return PlainTextResponse("failure")
+
+    # 逾期罚款订单
+    if out_trade_no and str(out_trade_no).startswith("fine_"):
+        fine_tx = crud_fine.get_transaction_by_out_trade_no(db, out_trade_no)
+        if not fine_tx:
+            logger.warning(
+                f"⚠️ [支付宝回调] 未找到罚款流水 | out_trade_no: {out_trade_no}"
+            )
+            return PlainTextResponse("failure")
+        if str(fine_tx.amount) != str(total_amount):
+            logger.error(
+                f"❌ [支付宝回调] 罚款金额不一致 | out_trade_no: {out_trade_no}"
+            )
+            crud_fine.mark_fine_payment_failed(
+                db, fine_tx, json.dumps(dict(form), ensure_ascii=False)
+            )
+            return PlainTextResponse("failure")
+        raw_notify = json.dumps(dict(form), ensure_ascii=False)
+        if trade_status in ["TRADE_SUCCESS", "TRADE_FINISHED"]:
+            crud_fine.mark_fine_payment_success(
+                db, fine_tx, trade_no, raw_notify
+            )
+            logger.info(f"✅ [支付宝回调] 罚款支付成功 | out_trade_no: {out_trade_no}")
+            return PlainTextResponse("success")
+        crud_fine.mark_fine_payment_failed(db, fine_tx, raw_notify)
         return PlainTextResponse("failure")
 
     tx = crud_deposit.get_transaction_by_out_trade_no(db, out_trade_no)

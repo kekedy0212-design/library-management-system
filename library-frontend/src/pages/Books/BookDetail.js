@@ -7,6 +7,9 @@ import { hasPermission } from '../../utils/auth';
 import { ROLES } from '../../utils/constants';
 import { borrowService } from '../../services/borrowService';
 import MdCard from '../../components/MdCard';
+import BookRating from '../../components/BookRating';
+import BookReviews from '../../components/BookReviews';
+import RatingBadge from '../../components/RatingBadge';
 import Toast from '../../components/Toast';
 import JsBarcode from 'jsbarcode';
 
@@ -228,6 +231,12 @@ const BookDetail = () => {
           <p style={{ color: 'var(--md-sys-color-secondary)', fontSize: '1.2rem', margin: '4px 0 0 0' }}>
             {currentBook.author}
           </p>
+          <div style={{ marginTop: '12px' }}>
+            <RatingBadge
+              average={currentBook.average_rating}
+              count={currentBook.rating_count ?? 0}
+            />
+          </div>
         </div>
         <button
           onClick={() => navigate('/books')}
@@ -276,6 +285,31 @@ const BookDetail = () => {
                 <InfoField label="On Loan" value={currentBook.total_copies - currentBook.available_copies} />
               </div>
             </div>
+          </MdCard>
+
+          <MdCard variant="outlined" style={{ padding: '24px' }}>
+            <h3 style={sectionTitleStyle}>Reader Ratings</h3>
+            <BookRating
+              bookId={currentBook.id}
+              onRated={() => fetchBookById(parseInt(id, 10))}
+            />
+          </MdCard>
+
+          <MdCard variant="outlined" style={{ padding: '24px' }}>
+            <h3 style={sectionTitleStyle}>Description</h3>
+            <p
+              style={{
+                lineHeight: '1.7',
+                fontSize: '0.95rem',
+                margin: 0,
+                color: 'var(--md-sys-color-on-surface-variant)',
+                whiteSpace: 'pre-line',
+                maxHeight: '200px',
+                overflowY: 'auto',
+              }}
+            >
+              {currentBook.description || 'No description provided.'}
+            </p>
           </MdCard>
 
           {/* Identifiers Card */}
@@ -384,31 +418,27 @@ const BookDetail = () => {
           </div>
         )}
 
-        {/* Right Column: Description & Actions */}
+        {/* Right Column: Reviews & Actions */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '24px',
-          height: '100%', // 确保子元素可以参考高度
+          height: '100%',
         }}>
-          {/* Description Card */}
-          <MdCard variant="filled" style={{
-            padding: '32px',
-            flex: 1,            // 让卡片占据右侧列的所有剩余高度
-            display: 'flex',    // 【新增】必须设为 flex，内部的 p 标签 flex: 1 才会生效
-            flexDirection: 'column'
-          }}>
-            <h3 style={sectionTitleStyle}>Description</h3>
-            <p style={{
-              lineHeight: '1.8',
-              fontSize: '1.05rem',
-              margin: 0,
-              color: 'var(--md-sys-color-on-surface-variant)',
-              whiteSpace: 'pre-line',
-              flex: 1,          // 这里的 flex: 1 会把底部的空间填满
-            }}>
-              {currentBook.description || "No description provided."}
-            </p>
+          <MdCard
+            variant="filled"
+            style={{
+              padding: '32px',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: '420px',
+            }}
+          >
+            <h3 style={sectionTitleStyle}>Reader Reviews</h3>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <BookReviews bookId={currentBook.id} />
+            </div>
           </MdCard>
 
           {/*currentBook.available_copies > 0 && (

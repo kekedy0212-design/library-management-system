@@ -8,6 +8,7 @@ import { bookService } from '../services/bookService';
 import { userService } from '../services/userService';
 import { depositService } from '../services/depositService';
 import { formatDate, getStatusText } from '../utils/helpers';
+import RecommendedBooks from '../components/RecommendedBooks';
 
 // MWC Component Imports
 import '@material/web/button/filled-button.js';
@@ -207,7 +208,7 @@ const Dashboard = () => {
                 {recentRequests.map((item) => (
                   <div key={item.id} style={{ padding: '10px', borderRadius: '10px', background: 'var(--md-sys-color-surface-container-low)' }}>
                     <div style={{ fontWeight: '500' }}>
-                      {item.book?.title || `书籍 #${item.book_id}`}
+                      {item.book?.title || `Book #${item.book_id}`}
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--md-sys-color-on-surface-variant)' }}>
                       User: {item.user?.username || `#${item.user_id}`} | Type: {getStatusText(item.status)} | Date: {formatDate(item.request_date)}
@@ -239,6 +240,39 @@ const Dashboard = () => {
           )}
         </MdCard>
       </div>
+
+      <MdCard variant="outlined" style={{ padding: '24px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, font: 'var(--md-sys-typescale-title-medium-font)' }}>
+              Recommended For You
+            </h3>
+            <p
+              style={{
+                margin: '4px 0 0',
+                fontSize: '0.875rem',
+                color: 'var(--md-sys-color-on-surface-variant)',
+              }}
+            >
+              Top rated books (average rating 4.0+)
+            </p>
+          </div>
+          <md-outlined-button href="/books">
+            <md-icon slot="icon">menu_book</md-icon>
+            Full Catalog
+          </md-outlined-button>
+        </div>
+        <RecommendedBooks limit={8} />
+      </MdCard>
     </div>
   );
 };
