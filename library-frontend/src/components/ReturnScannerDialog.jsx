@@ -62,8 +62,8 @@ const ReturnScannerDialog = ({
     const [scannedRecords, setScannedRecords] =
         useState([]);
 
-    const [errors, setErrors] =
-        useState([]);
+    // const [errors, setErrors] =
+    //     useState([]);
 
     const [processing, setProcessing] =
         useState(false);
@@ -135,17 +135,17 @@ const ReturnScannerDialog = ({
             time: now,
         };
 
-        setErrors(prev => {
+        // setErrors(prev => {
 
-            if (prev[0] === message) {
-                return prev;
-            }
+        //     if (prev[0] === message) {
+        //         return prev;
+        //     }
 
-            return [
-                message,
-                ...prev,
-            ];
-        });
+        //     return [
+        //         message,
+        //         ...prev,
+        //     ];
+        // });
 
         showSnackbar(
             message,
@@ -217,7 +217,7 @@ const ReturnScannerDialog = ({
 
         setScannedRecords([]);
 
-        setErrors([]);
+        //setErrors([]);
 
         onClose?.();
     };
@@ -450,11 +450,6 @@ const ReturnScannerDialog = ({
 
             setProcessing(true);
 
-            showSnackbar(
-                'Submitting return requests...',
-                'info'
-            );
-
             const successIds = [];
 
             const failedMessages = [];
@@ -483,11 +478,6 @@ const ReturnScannerDialog = ({
 
                     successIds.push(
                         item.record.id
-                    );
-
-                    showSnackbar(
-                        `"${item.record.book?.title}" return request submitted.`,
-                        'success'
                     );
 
                 } catch (err) {
@@ -583,12 +573,8 @@ const ReturnScannerDialog = ({
 
     const clearErrors = () => {
 
-        setErrors([]);
+        //setErrors([]);
 
-        showSnackbar(
-            'Errors cleared.',
-            'info'
-        );
     };
 
     if (!open) {
@@ -752,10 +738,10 @@ const ReturnScannerDialog = ({
                                 active={open}
                                 onDetected={handleDetected}
                                 onError={(msg) => {
-                                    setErrors(prev => [
-                                        msg,
-                                        ...prev,
-                                    ]);
+                                    // setErrors(prev => [
+                                    //     msg,
+                                    //     ...prev,
+                                    // ]);
                                 }}
                             />
                         </div>
@@ -924,7 +910,7 @@ const ReturnScannerDialog = ({
                         </div>
 
                         {/* Errors */}
-                        {errors.length > 0 && (
+                        {/*errors.length > 0 && (
                             <div
                                 style={{
                                     marginTop: '16px',
@@ -993,7 +979,7 @@ const ReturnScannerDialog = ({
                                     ))}
                                 </ul>
                             </div>
-                        )}
+                        )*/}
                     </div>
                 </div>
 
